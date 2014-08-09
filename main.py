@@ -6,23 +6,42 @@ import logging
 
 import networkx as nx
 
-class Scheduler:
-    pass
+class DAGScheduler:
+    """
+    This is a scheduler based on a Directed Acyclic Graph
+    """
+
+    __services = nx.DiGraph()
+
+    def add(self, service):
+        self.__services.add_node(service.name(), service=service)
+
+    def add_dependency(self, service, required_service):
+        self.__services.add_edge(service.name(), required_service.name())
+
+    def sorted_services(self):
+        sorted_services = [self.__services.node[name]['service'] for name in nx.topological_sort(self.__services, reverse=True)]
+        logging.info("SCHEDULER >> Computed topological sorting of the services is: {}".format(sorted_services))
+        return sorted_services
 
 # # # INIT PROCESS # # #
 
 import subprocess
 
 class InitProcess:
-    def __init__(self):
+    def __init__(self, scheduler):
+        self.__scheduler = scheduler
         self.__probes = []
-        self.__services = []
 
     def add(self, service):
-        self.__services.append(service)
+        self.__scheduler.add(service)
+
+    def add_dependency(self, service, required_service):
+        self.__scheduler.add_dependency(service, required_service)
 
     def start(self):
-        for service in self.__services:
+        for service in self.__scheduler.sorted_services():
+            # TODO if can_run(service) ...
             self.__start(service)
 
     def respawn(self, service):
@@ -57,7 +76,6 @@ class Probe(Thread):
         logging.info("PROBE >> Starting for [{0}] with PID [{1}]".format(self.__service.name(), self.__service.pid()))
         while(True):
             self.__heartbeat()
-            sleep(1)
 
             if self.__is_terminated():
                 logging.info("PROBE >> Terminating for [{0}] with PID [{1}]".format(self.__service.name(), self.__service.pid()))
@@ -67,6 +85,8 @@ class Probe(Thread):
                 logging.info("PROBE >> Terminating... Trying to respawn [{0}] with PID [{1}]".format(self.__service.name(), self.__service.pid()))
                 self.__init.respawn(self.__service)
                 return
+
+            sleep(1)
 
     def __heartbeat(self):
         logging.info("PROBE >> Ping: heartbeat for [{0}] with PID [{1}]".format(self.__service.name(), self.__service.pid()))
@@ -115,15 +135,23 @@ class Service:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    services = [
-        Service('data', 'sleep 4; exit 1'),
-        Service('mysql', 'sleep 6; exit 1'),
-        Service('redis', 'sleep 8; exit 1'),
-        Service('app', 'sleep 10; exit 1'),
-        Service('nginx', 'sleep 12; exit 1')
-    ]
+    data = Service('data', 'sleep 60; exit 1')
+    mysql = Service('mysql', 'sleep 50; exit 1')
+    redis = Service('redis', 'sleep 40; exit 1')
+    app = Service('app', 'sleep 30; exit 1')
+    nginx = Service('nginx', 'sleep 20; exit 1')
 
-    init_process = InitProcess()
-    for service in services:
-        init_process.add(service)
+    scheduler = DAGScheduler()
+    init_process = InitProcess(scheduler)
+
+    init_process.add(data)
+    init_process.add(mysql)
+    init_process.add(redis)
+    init_process.add(app)
+    init_process.add(nginx)
+
+    init_process.add_dependency(mysql, data)
+    init_process.add_dependency(app, mysql)
+    init_process.add_dependency(app, redis)
+
     init_process.start()
