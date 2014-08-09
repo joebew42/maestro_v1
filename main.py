@@ -103,15 +103,15 @@ class Probe(Thread):
 
 class Service:
     def __init__(self, name, command):
-        self.__command = command
         self.__name = name
+        self.__command = command
         self.__process = None
-
-    def command(self):
-        return self.__command
 
     def name(self):
         return self.__name
+
+    def command(self):
+        return self.__command
 
     def set_process(self, process):
        self.__process = process
