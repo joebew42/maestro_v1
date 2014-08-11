@@ -47,7 +47,7 @@ class InitProcess:
     def respawn(self, service):
         # TODO implement a restart strategy
         # Reference: http://www.erlang.org/doc/design_principles/sup_princ.html
-        logging.info("INIT >> Respawing [{0}] with PID [{1}]".format(service.name(), service.pid()))
+        logging.info("INIT >> Respawing [{0}]".format(service.name()))
         self.__start(service)
 
     def __start(self, service):
