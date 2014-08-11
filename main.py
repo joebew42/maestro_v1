@@ -44,10 +44,10 @@ class InitProcess:
             # TODO if can_run(service) ...
             self.__start(service)
 
-    def respawn(self, service):
+    def restart(self, service):
         # TODO implement a restart strategy
         # Reference: http://www.erlang.org/doc/design_principles/sup_princ.html
-        logging.info("INIT >> Respawing [{0}]".format(service.name()))
+        logging.info("INIT >> Restarting [{0}]".format(service.name()))
         self.__start(service)
 
     def __start(self, service):
@@ -84,8 +84,8 @@ class Probe(Thread):
                 return
 
             if self.__is_to_respawn():
-                logging.info("PROBE >> Terminating... Trying to respawn [{0}] with PID [{1}]".format(self.__service.name(), self.__service.pid()))
-                self.__init.respawn(self.__service)
+                logging.info("PROBE >> Terminating... Trying to restart [{0}] with PID [{1}]".format(self.__service.name(), self.__service.pid()))
+                self.__init.restart(self.__service)
                 return
 
             sleep(1)
