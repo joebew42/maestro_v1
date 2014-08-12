@@ -92,7 +92,7 @@ class Supervisor:
                      logging.info("SUPERVISOR >> [{0}] with PID [{1}] terminates with returncode [0]".format(service.name(), service.pid()))
                      self.__services.remove(service)
 
-                if service.returncode() == 1:
+                if service.returncode() is not None:
                     logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
                     self.__restart(service)
 
