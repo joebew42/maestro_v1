@@ -119,6 +119,11 @@ class Supervisor:
         sleep(1)
         logging.info("SUPERVISOR << Pong: [{0}] with PID [{1}] has a returncode [{2}]".format(service.name(), service.pid(), service.returncode()))
 
+    def stop(self):
+        for service in reversed(self.__services):
+            logging.info("SUPERVISOR >> Killing [{0}] with PID [{1}]".format(service.name(), service.pid()))
+            service.stop()
+
 # # # SERVICE # # #
 
 class Service:
@@ -145,6 +150,10 @@ class Service:
     def returncode(self):
         return self.__process.returncode
 
+    def stop(self):
+        if self.__process is not None:
+            self.__process.terminate()
+
     def __str__(self):
         return self.name()
 
@@ -169,4 +178,7 @@ if __name__ == "__main__":
     for dependency in parser.dependencies():
         supervisor.add_dependency(dependency[0], dependency[1])
 
-    supervisor.start()
+    try:
+        supervisor.start()
+    except KeyboardInterrupt:
+        supervisor.stop()
