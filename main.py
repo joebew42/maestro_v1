@@ -79,7 +79,6 @@ class Supervisor(Thread):
     def __init(self):
         self.__services = self.__scheduler.sorted_services()
         for service in self.__services:
-            # TODO if can_run(service) ...
             self.__spawn_process(service)
 
     def __restart(self, service):
@@ -89,6 +88,7 @@ class Supervisor(Thread):
         self.__spawn_process(service)
 
     def __spawn_process(self, service):
+        # TODO if can_run(service) ...
         process = subprocess.Popen(service.command(), shell=True)
         service.set_process(process)
         logging.info("SUPERVISOR >> Spawned [{0}] with PID [{1}]".format(service.name(), service.pid()))
