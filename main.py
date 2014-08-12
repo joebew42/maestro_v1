@@ -67,7 +67,6 @@ class DAGScheduler:
 
 import subprocess
 
-from threading import Thread
 from time import sleep
 
 class Supervisor:
@@ -91,6 +90,7 @@ class Supervisor:
                 if service.returncode() == 0:
                      logging.info("SUPERVISOR >> [{0}] with PID [{1}] terminates with returncode [0]".format(service.name(), service.pid()))
                      self.__services.remove(service)
+                     continue
 
                 if service.returncode() is not None:
                     logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
