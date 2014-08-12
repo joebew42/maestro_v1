@@ -175,3 +175,41 @@ if __name__ == "__main__":
     init_process.add_dependency(app, redis)
 
     init_process.start()
+
+
+
+# JSON EXAMPLE
+# [
+#     {
+#         "data": {
+#             "command": "sleep 60; exit 1"
+#         }
+#     },
+#     {
+#         "mysql": {
+#             "command": "sleep 50; exit 1",
+#             "requires": [
+#                 "data"
+#             ]
+#         }
+#     },
+#     {
+#         "redis": {
+#             "command": "sleep 40; exit 1"
+#         }
+#     },
+#     {
+#         "app": {
+#             "command": "sleep 30; exit 1",
+#             "requires": [
+#                 "mysql",
+#                 "redis"
+#             ]
+#         }
+#     },
+#     {
+#         "nginx": {
+#             "command": "sleep 20; exit 1"
+#         }
+#     }
+# ]
