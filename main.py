@@ -2,6 +2,24 @@
 
 import logging
 
+# # # JSON PARSER # # #
+
+import json
+
+class JSONParser:
+    """
+    It's read a JSON object and returns services and dependencies
+    """
+
+    def __init__(self, json):
+        self.__json = json
+
+    def services(self):
+        return []
+
+    def dependencies(self):
+        return []
+
 # # # SCHEDULER # # #
 
 import networkx as nx
