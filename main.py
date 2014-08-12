@@ -70,9 +70,8 @@ import subprocess
 from threading import Thread
 from time import sleep
 
-class Supervisor(Thread):
+class Supervisor:
     def __init__(self, scheduler):
-        super().__init__()
         self.__scheduler = scheduler
         self.__services = []
 
@@ -82,7 +81,7 @@ class Supervisor(Thread):
     def add_dependency(self, service, required_service):
         self.__scheduler.add_dependency(service, required_service)
 
-    def run(self):
+    def start(self):
         self.__init()
         logging.info("SUPERVISOR >> Start monitoring")
         while(True):
