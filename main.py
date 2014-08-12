@@ -155,14 +155,14 @@ class Service:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
+    scheduler = DAGScheduler()
+    init_process = InitProcess(scheduler)
+
     data = Service('data', 'sleep 60; exit 1')
     mysql = Service('mysql', 'sleep 50; exit 1')
     redis = Service('redis', 'sleep 40; exit 1')
     app = Service('app', 'sleep 30; exit 1')
     nginx = Service('nginx', 'sleep 20; exit 1')
-
-    scheduler = DAGScheduler()
-    init_process = InitProcess(scheduler)
 
     init_process.add(data)
     init_process.add(mysql)
