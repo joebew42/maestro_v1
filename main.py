@@ -8,17 +8,38 @@ import json
 
 class JSONParser:
     """
-    It's read a JSON object and returns services and dependencies
+    It's read a JSON text and returns services and dependencies
     """
 
-    def __init__(self, json):
-        self.__json = json
+    def __init__(self, json_text):
+        self.__json = json.loads(json_text)
+        self.__services = {}
+        self.__dependencies = []
+        self.__parse()
+
+    def __parse(self):
+        self.__load_services()
+        self.__load_dependencies()
+
+    def __load_services(self):
+        for item in self.__json:
+            for name in item.keys():
+                self.__services[name] = Service(name, item[name]['command'])
+        logging.info("JSONPARSER >> Resolved services: {}".format(self.services()))
+
+    def __load_dependencies(self):
+        for item in self.__json:
+            for name in item.keys():
+                if 'requires' in item[name]:
+                    for dependency in item[name]['requires']:
+                        self.__dependencies.append((self.__services[name], self.__services[dependency]))
+        logging.info("JSONPARSER >> Resolved dependencies: {}".format(self.dependencies()))
 
     def services(self):
-        return []
+        return self.__services.values()
 
     def dependencies(self):
-        return []
+        return self.__dependencies
 
 # # # SCHEDULER # # #
 
@@ -138,59 +159,15 @@ if __name__ == "__main__":
     scheduler = DAGScheduler()
     supervisor = Supervisor(scheduler)
 
-    data = Service('data', 'sleep 60; exit 1')
-    mysql = Service('mysql', 'sleep 50; exit 1')
-    redis = Service('redis', 'sleep 40; exit 1')
-    app = Service('app', 'sleep 30; exit 1')
-    nginx = Service('nginx', 'sleep 20; exit 1')
-    batch = Service('batch', 'sleep 4; exit 0')
+    with open('deploy.json', 'r') as json_file:
+        json_example = json_file.read()
 
-    supervisor.add(data)
-    supervisor.add(mysql)
-    supervisor.add(redis)
-    supervisor.add(app)
-    supervisor.add(nginx)
-    supervisor.add(batch)
+    parser = JSONParser(json_example)
 
-    supervisor.add_dependency(mysql, data)
-    supervisor.add_dependency(app, mysql)
-    supervisor.add_dependency(app, redis)
+    for service in parser.services():
+        supervisor.add(service)
+
+    for dependency in parser.dependencies():
+        supervisor.add_dependency(dependency[0], dependency[1])
 
     supervisor.start()
-
-
-# JSON EXAMPLE
-# [
-#     {
-#         "data": {
-#             "command": "sleep 60; exit 1"
-#         }
-#     },
-#     {
-#         "mysql": {
-#             "command": "sleep 50; exit 1",
-#             "requires": [
-#                 "data"
-#             ]
-#         }
-#     },
-#     {
-#         "redis": {
-#             "command": "sleep 40; exit 1"
-#         }
-#     },
-#     {
-#         "app": {
-#             "command": "sleep 30; exit 1",
-#             "requires": [
-#                 "mysql",
-#                 "redis"
-#             ]
-#         }
-#     },
-#     {
-#         "nginx": {
-#             "command": "sleep 20; exit 1"
-#         }
-#     }
-# ]
