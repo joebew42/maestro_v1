@@ -28,7 +28,7 @@
     },
     {
         "nginx": {
-            "command": "sleep 20; exit 1"
+            "command": "while [ 1 ]; do echo \"I'm nginx\"; sleep 2; done"
         }
     },
     {

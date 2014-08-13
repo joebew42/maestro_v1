@@ -70,9 +70,11 @@ import subprocess
 from time import sleep
 
 class Supervisor:
-    def __init__(self, scheduler):
+    def __init__(self, scheduler, logfile_name="supervisor.log"):
         self.__scheduler = scheduler
         self.__services = []
+        self.__logfile_name = logfile_name
+        self.__logfile = None
 
     def add(self, service):
         self.__scheduler.add(service)
@@ -97,6 +99,7 @@ class Supervisor:
                     self.__restart(service)
 
     def __init(self):
+        self.__logfile = open(self.__logfile_name, "a")
         self.__services = self.__scheduler.sorted_services()
         for service in self.__services:
             self.__spawn_process(service)
@@ -109,7 +112,7 @@ class Supervisor:
 
     def __spawn_process(self, service):
         # TODO if can_run(service) ...
-        process = subprocess.Popen(service.command(), shell=True)
+        process = subprocess.Popen(service.command(), shell=True, stdout=self.__logfile, stderr=self.__logfile)
         service.set_process(process)
         logging.info("SUPERVISOR >> Spawned [{0}] with PID [{1}]".format(service.name(), service.pid()))
 
@@ -120,6 +123,7 @@ class Supervisor:
         logging.info("SUPERVISOR << Pong: [{0}] with PID [{1}] has a returncode [{2}]".format(service.name(), service.pid(), service.returncode()))
 
     def stop(self):
+        self.__logfile.close()
         for service in reversed(self.__services):
             self.__stop(service)
 
