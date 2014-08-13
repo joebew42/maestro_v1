@@ -121,8 +121,11 @@ class Supervisor:
 
     def stop(self):
         for service in reversed(self.__services):
-            logging.info("SUPERVISOR >> Killing [{0}] with PID [{1}]".format(service.name(), service.pid()))
-            service.stop()
+            self.__stop(service)
+
+    def __stop(self, service):
+        logging.info("SUPERVISOR >> Killing [{0}] with PID [{1}]".format(service.name(), service.pid()))
+        service.stop()
 
 # # # SERVICE # # #
 
@@ -151,8 +154,12 @@ class Service:
         return self.__process.returncode
 
     def stop(self):
-        if self.__process is not None:
+        try:
             self.__process.terminate()
+            self.poll()
+            logging.info("SERVICE >> Killed [{0}] with PID [{1}] returned with [{2}]".format(self.name(), self.pid(), self.returncode()))
+        except Exception as exception:
+            logging.info("SERVICE >> Unable to terminate [{0}] with PID [{1}]. Reason: {2}".format(self.name(), self.pid(), exception))
 
     def __str__(self):
         return self.name()
