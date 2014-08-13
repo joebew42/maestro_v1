@@ -1,28 +1,33 @@
 [
   {
     "name"    : "data",
-    "command" : "sleep 60; exit 1"
+    "command" : "sleep 60; exit 0",
+    "restart" : "always"
   },
   {
     "name"    : "mysql",
     "command" : "sleep 50; exit 1",
+    "restart" : "on-error",
     "requires": [ "data" ]
   },
   {
     "name"    : "redis",
-    "command" : "sleep 40; exit 1"
+    "command" : "sleep 40; exit 1",
+    "restart" : "on-error"
   },
   {
     "name"    : "app",
     "command" : "sleep 30; exit 1",
-    "requires": [ "mysql", "redis" ]
+    "requires": [ "mysql", "redis" ],
+    "restart" : "none"
   },
   {
     "name"    : "nginx",
-    "command" : "while [ 1 ]; do echo \"I'm nginx\"; sleep 2; done"
+    "command" : "while [ 1 ]; do echo \"I'm nginx\"; sleep 2; done",
+    "restart" : "always"
   },
   {
     "name"    : "batch",
-    "command" : "sleep 4; exit 0"
+    "command" : "sleep 10; exit 0"
   }
 ]
