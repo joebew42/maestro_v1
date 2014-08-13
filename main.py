@@ -101,19 +101,13 @@ class Supervisor:
         self.__logfile = open(self.__logfile_name, "a")
         self.__services = self.__scheduler.sorted_services()
         for service in self.__services:
-            self.__spawn_process(service)
+            service.start(self.__logfile)
 
     def __restart(self, service):
         # TODO implement a restart strategy
         # Reference: http://www.erlang.org/doc/design_principles/sup_princ.html
         logging.info("SUPERVISOR >> Restarting [{0}]".format(service.name()))
-        self.__spawn_process(service)
-
-    def __spawn_process(self, service):
-        # TODO if can_run(service) ...
-        process = subprocess.Popen(service.command(), shell=True, stdout=self.__logfile, stderr=self.__logfile)
-        service.set_process(process)
-        logging.info("SUPERVISOR >> Spawned [{0}] with PID [{1}]".format(service.name(), service.pid()))
+        service.start(self.__logfile)
 
     def __ping(self, service):
         logging.info("SUPERVISOR >> Ping: [{0}] with PID [{1}]".format(service.name(), service.pid()))
@@ -144,9 +138,6 @@ class Service:
     def command(self):
         return self.__command
 
-    def set_process(self, process):
-       self.__process = process
-
     def poll(self):
         self.__process.poll()
 
@@ -155,6 +146,11 @@ class Service:
 
     def returncode(self):
         return self.__process.returncode
+
+    def start(self, logfile=None):
+        # TODO if self.__can_run
+        self.__process = subprocess.Popen(self.__command, shell=True, stdout=logfile, stderr=logfile)
+        logging.info("SERVICE >> Spawned [{0}] with PID [{1}]".format(self.name(), self.pid()))
 
     def stop(self):
         try:
