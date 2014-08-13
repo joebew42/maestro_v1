@@ -1,39 +1,28 @@
 [
   {
-    "data": {
-      "command": "sleep 60; exit 1"
-    }
+    "name"    : "data",
+    "command" : "sleep 60; exit 1"
   },
   {
-    "mysql": {
-      "command": "sleep 50; exit 1",
-      "requires": [
-        "data"
-      ]
-    }
+    "name"    : "mysql",
+    "command" : "sleep 50; exit 1",
+    "requires": [ "data" ]
   },
   {
-    "redis": {
-      "command": "sleep 40; exit 1"
-    }
+    "name"    : "redis",
+    "command" : "sleep 40; exit 1"
   },
   {
-    "app": {
-      "command": "sleep 30; exit 1",
-      "requires": [
-        "mysql",
-        "redis"
-      ]
-    }
+    "name"    : "app",
+    "command" : "sleep 30; exit 1",
+    "requires": [ "mysql", "redis" ]
   },
   {
-    "nginx": {
-      "command": "while [ 1 ]; do echo \"I'm nginx\"; sleep 2; done"
-    }
+    "name"    : "nginx",
+    "command" : "while [ 1 ]; do echo \"I'm nginx\"; sleep 2; done"
   },
   {
-    "batch": {
-      "command": "sleep 4; exit 0"
-    }
+    "name"    : "batch",
+    "command" : "sleep 4; exit 0"
   }
 ]

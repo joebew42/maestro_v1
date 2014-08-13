@@ -23,16 +23,15 @@ class JSONParser:
 
     def __load_services(self):
         for item in self.__json:
-            for name in item.keys():
-                self.__services[name] = Service(name, item[name]['command'])
+            name = item['name']
+            self.__services[name] = Service(name, item['command'])
         logging.info("JSONPARSER >> Resolved services: {}".format(self.services()))
 
     def __load_dependencies(self):
         for item in self.__json:
-            for name in item.keys():
-                if 'requires' in item[name]:
-                    for dependency in item[name]['requires']:
-                        self.__dependencies.append((self.__services[name], self.__services[dependency]))
+            if 'requires' in item:
+                for dependency in item['requires']:
+                    self.__dependencies.append((self.__services[item['name']], self.__services[dependency]))
         logging.info("JSONPARSER >> Resolved dependencies: {}".format(self.dependencies()))
 
     def services(self):
