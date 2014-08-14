@@ -90,15 +90,12 @@ class Supervisor:
 
                 if service.returncode() is not None:
                     if service.policy() == RestartPolicy.NONE:
-                        logging.info("SUPERVISOR >> [{0}] with PID [{1}] terminates with returncode [0]".format(service.name(), service.pid()))
-                        self.__services.remove(service)
+                        self.__remove(service)
 
                     if service.policy() == RestartPolicy.ALWAYS:
-                        logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
                         self.__restart(service)
 
                     if service.policy() == RestartPolicy.ON_ERROR and service.returncode() != 0:
-                        logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
                         self.__restart(service)
 
     def __init(self):
@@ -107,10 +104,14 @@ class Supervisor:
         for service in self.__services:
             service.start(self.__logfile)
 
+    def __remove(self, service):
+        logging.info("SUPERVISOR >> [{0}] with PID [{1}] terminates with returncode [0]".format(service.name(), service.pid()))
+        self.__services.remove(service)
+
     def __restart(self, service):
         # TODO implement a restart strategy
         # Reference: http://www.erlang.org/doc/design_principles/sup_princ.html
-        logging.info("SUPERVISOR >> Restarting [{0}]".format(service.name()))
+        logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
         service.start(self.__logfile)
 
     def __ping(self, service):
