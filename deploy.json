@@ -17,9 +17,9 @@
   },
   {
     "name"    : "app",
-    "command" : "sleep 30; exit 1",
+    "command" : "sleep 30; exit 22",
     "requires": [ "mysql", "redis" ],
-    "restart" : "none"
+    "restart" : "always"
   },
   {
     "name"    : "nginx",

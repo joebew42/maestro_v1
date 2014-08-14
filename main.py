@@ -24,14 +24,14 @@ class JSONParser:
     def __load_services(self):
         for item in self.__json:
             name = item['name']
-            self.__services[name] = Service(name, item['command'])
+            policy = item.get('restart', RestartPolicy.NONE)
+            self.__services[name] = Service(name, item['command'], policy)
         logging.info("JSONPARSER >> Resolved services: {}".format(self.services()))
 
     def __load_dependencies(self):
         for item in self.__json:
-            if 'requires' in item:
-                for dependency in item['requires']:
-                    self.__dependencies.append((self.__services[item['name']], self.__services[dependency]))
+            for dependency in item.get('requires', []):
+                self.__dependencies.append((self.__services[item['name']], self.__services[dependency]))
         logging.info("JSONPARSER >> Resolved dependencies: {}".format(self.dependencies()))
 
     def services(self):
@@ -88,14 +88,18 @@ class Supervisor:
             for service in self.__services:
                 self.__ping(service)
 
-                if service.returncode() == 0:
-                     logging.info("SUPERVISOR >> [{0}] with PID [{1}] terminates with returncode [0]".format(service.name(), service.pid()))
-                     self.__services.remove(service)
-                     continue
-
                 if service.returncode() is not None:
-                    logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
-                    self.__restart(service)
+                    if service.policy() == RestartPolicy.NONE:
+                        logging.info("SUPERVISOR >> [{0}] with PID [{1}] terminates with returncode [0]".format(service.name(), service.pid()))
+                        self.__services.remove(service)
+
+                    if service.policy() == RestartPolicy.ALWAYS:
+                        logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
+                        self.__restart(service)
+
+                    if service.policy() == RestartPolicy.ON_ERROR and service.returncode() != 0:
+                        logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
+                        self.__restart(service)
 
     def __init(self):
         self.__logfile = open(self.__logfile_name, "a")
@@ -124,19 +128,30 @@ class Supervisor:
         logging.info("SUPERVISOR >> Killing [{0}] with PID [{1}]".format(service.name(), service.pid()))
         service.stop()
 
+# # # RESTART POLICIES # # #
+
+class RestartPolicy:
+    NONE     = "none"
+    ALWAYS   = "always"
+    ON_ERROR = "on-error"
+
 # # # SERVICE # # #
 
 class Service:
-    def __init__(self, name, command):
+    def __init__(self, name, command, policy=RestartPolicy.NONE):
         self.__name = name
         self.__command = command
         self.__process = None
+        self.__policy = policy
 
     def name(self):
         return self.__name
 
     def command(self):
         return self.__command
+
+    def policy(self):
+        return self.__policy
 
     def poll(self):
         self.__process.poll()
@@ -150,7 +165,7 @@ class Service:
     def start(self, logfile=None):
         # TODO if self.__can_run
         self.__process = subprocess.Popen(self.__command, shell=True, stdout=logfile, stderr=logfile)
-        logging.info("SERVICE >> Spawned [{0}] with PID [{1}]".format(self.name(), self.pid()))
+        logging.info("SERVICE >> Spawned [{0}]: PID [{1}] and Restart Policy [{2}]".format(self.name(), self.pid(), self.policy()))
 
     def stop(self):
         try:
