@@ -86,7 +86,8 @@ class Supervisor:
         logging.info("SUPERVISOR >> Start monitoring")
         while(True):
             for service in self.__services:
-                self.__ping(service)
+                service.ping()
+                sleep(1)
 
                 if service.returncode() is not None:
                     if service.policy() == RestartPolicy.NONE:
@@ -114,20 +115,10 @@ class Supervisor:
         logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
         service.start(self.__logfile)
 
-    def __ping(self, service):
-        logging.info("SUPERVISOR >> Ping: [{0}] with PID [{1}]".format(service.name(), service.pid()))
-        service.poll()
-        sleep(1)
-        logging.info("SUPERVISOR << Pong: [{0}] with PID [{1}] has a returncode [{2}]".format(service.name(), service.pid(), service.returncode()))
-
     def stop(self):
         self.__logfile.close()
         for service in reversed(self.__services):
-            self.__stop(service)
-
-    def __stop(self, service):
-        logging.info("SUPERVISOR >> Killing [{0}] with PID [{1}]".format(service.name(), service.pid()))
-        service.stop()
+            service.stop()
 
 # # # RESTART POLICIES # # #
 
@@ -154,9 +145,6 @@ class Service:
     def policy(self):
         return self.__policy
 
-    def poll(self):
-        self.__process.poll()
-
     def pid(self):
         return self.__process.pid
 
@@ -171,10 +159,14 @@ class Service:
     def stop(self):
         try:
             self.__process.terminate()
-            self.poll()
+            self.__process.poll()
             logging.info("SERVICE >> Killed [{0}] with PID [{1}] returned with [{2}]".format(self.name(), self.pid(), self.returncode()))
         except Exception as exception:
             logging.info("SERVICE >> Unable to terminate [{0}] with PID [{1}]. Reason: {2}".format(self.name(), self.pid(), exception))
+
+    def ping(self):
+        self.__process.poll()
+        logging.info("SERVICE << Ping: [{0}] with PID [{1}] has a returncode [{2}]".format(self.name(), self.pid(), self.returncode()))
 
     def __str__(self):
         return self.name()
