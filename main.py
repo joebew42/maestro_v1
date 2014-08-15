@@ -14,22 +14,22 @@ class JSONParser:
     def __init__(self, json_text):
         self.__json = json.loads(json_text)
         self.__services = self.__load_services(self.__json)
-        self.__dependencies = self.__load_dependencies(self.__services)
+        self.__dependencies = self.__load_dependencies(self.__services, self.__json)
 
     def __load_services(self, json):
         services = {}
         for item in json:
             name = item['name']
             policy = item.get('restart', RestartPolicy.NONE)
-            services[name] = Service(name, item['command'], policy, item.get('requires', []))
+            services[name] = Service(name, item['command'], policy)
         logging.info("JSONPARSER >> Resolved services: {}".format(services.values()))
         return services
 
-    def __load_dependencies(self, services):
+    def __load_dependencies(self, services, json):
         dependencies = []
-        for service in services.values():
-            for dependency_name in service.dependencies():
-                dependencies.append((service, services[dependency_name]))
+        for item in json:
+            for dependency_name in item.get('requires', []):
+                dependencies.append((services[item['name']], services[dependency_name]))
         logging.info("JSONPARSER >> Resolved dependencies: {}".format(dependencies))
         return dependencies
 
@@ -130,12 +130,11 @@ class RestartPolicy:
 # # # SERVICE # # #
 
 class Service:
-    def __init__(self, name, command, policy=RestartPolicy.NONE, dependencies=[]):
+    def __init__(self, name, command, policy=RestartPolicy.NONE):
         self.__name = name
         self.__command = command
         self.__process = None
         self.__policy = policy
-        self.__dependencies = dependencies
 
     def name(self):
         return self.__name
@@ -145,9 +144,6 @@ class Service:
 
     def policy(self):
         return self.__policy
-
-    def dependencies(self):
-        return self.__dependencies
 
     def pid(self):
         return self.__process.pid
