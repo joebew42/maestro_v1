@@ -48,7 +48,8 @@ class DAGScheduler:
     This is a scheduler based on a Directed Acyclic Graph
     """
 
-    __services = nx.DiGraph()
+    def __init__(self):
+        self.__services = nx.DiGraph()
 
     def add(self, service):
         self.__services.add_node(service.name(), service=service)
