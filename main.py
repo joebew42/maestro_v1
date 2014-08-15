@@ -183,8 +183,7 @@ if __name__ == "__main__":
 
     with open('deploy.json', 'r') as json_file:
         json_example = json_file.read()
-
-    parser = JSONParser(json_example)
+        parser = JSONParser(json_example)
 
     for service in parser.services():
         supervisor.add(service)
