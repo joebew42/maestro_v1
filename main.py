@@ -72,6 +72,7 @@ class Supervisor:
     def __init__(self, scheduler, logfile_name="supervisor.log"):
         self.__scheduler = scheduler
         self.__services = {}
+        self.__child_pids = {}
         self.__logfile_name = logfile_name
         self.__logfile = None
         self.__queue = Queue()
@@ -118,10 +119,12 @@ class Supervisor:
     def __spawn(self, service, logfile):
         serviceprocess = ServiceProcess(service.name(), service.command(), self.__queue, logfile)
         serviceprocess.start()
+        self.__child_pids[service.name()] = serviceprocess.pid
 
     def __remove(self, service):
         logging.info("SUPERVISOR >> Removing [{0}] from services".format(service.name()))
         del self.__services[service.name()]
+        del self.__child_pids[service.name()]
 
     def __restart(self, service):
         # TODO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
