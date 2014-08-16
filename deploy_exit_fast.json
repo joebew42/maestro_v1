@@ -1,0 +1,17 @@
+[
+  {
+    "name"    : "data",
+    "command" : "sleep 2; exit 0",
+    "restart" : "always"
+  },
+  {
+    "name"    : "data2",
+    "command" : "sleep 4; exit 0",
+    "restart" : "always"
+  },
+  {
+    "name"    : "data3",
+    "command" : "sleep 6; exit 0",
+    "restart" : "always"
+  }
+]

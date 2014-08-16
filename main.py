@@ -183,13 +183,20 @@ class Service:
 
 # # # MAIN # # #
 
+import sys
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    if len(sys.argv) < 2:
+        filename = 'deploy.json'
+    else:
+        filename = sys.argv[1]
 
     scheduler = DAGScheduler()
     supervisor = Supervisor(scheduler)
 
-    with open('deploy.json', 'r') as json_file:
+    with open(filename, 'r') as json_file:
         parser = JSONParser(json_file.read())
 
     for service in parser.services():
