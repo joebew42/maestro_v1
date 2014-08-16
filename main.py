@@ -66,14 +66,16 @@ class DAGScheduler:
 
 import subprocess
 
+from multiprocessing import Queue
 from time import sleep
 
 class Supervisor:
     def __init__(self, scheduler, logfile_name="supervisor.log"):
         self.__scheduler = scheduler
-        self.__services = []
+        self.__services = {}
         self.__logfile_name = logfile_name
         self.__logfile = None
+        self.__queue = Queue()
 
     def add(self, service):
         self.__scheduler.add(service)
@@ -82,43 +84,73 @@ class Supervisor:
         self.__scheduler.add_dependency(service, required_service)
 
     def start(self):
-        self.__init()
-        logging.info("SUPERVISOR >> Start monitoring")
-        while(True):
-            for service in self.__services:
-                service.ping()
-                sleep(1)
-
-                if service.returncode() is not None:
-                    if service.policy() == RestartPolicy.NONE:
-                        self.__remove(service)
-
-                    if service.policy() == RestartPolicy.ALWAYS:
-                        self.__restart(service)
-
-                    if service.policy() == RestartPolicy.ON_ERROR and service.returncode() != 0:
-                        self.__restart(service)
-
-    def __init(self):
         self.__logfile = open(self.__logfile_name, "a")
-        self.__services = self.__scheduler.sorted_services()
-        for service in self.__services:
-            service.start(self.__logfile)
+
+        for service in self.__scheduler.sorted_services():
+            self.__services[service.name()] = service
+            self.__spawn(service, self.__logfile)
+
+        logging.info("SUPERVISOR >> Start monitoring")
+        try:
+            self.__run()
+        except KeyboardInterrupt:
+            logging.info("SUPERVISOR >> Keyboard Interrupt received: Stopping ...")
+        finally:
+            self.__logfile.close()
+
+    def __run(self):
+        while(True):
+            msg = self.__queue.get(True, None)
+            logging.info("SUPERVISOR << Received message [{0}]".format(msg))
+
+            service = self.__services[msg['service_name']]
+            returncode = msg['service_returncode']
+
+            if returncode is not None:
+                if service.policy() == RestartPolicy.NONE:
+                    self.__remove(service)
+
+                if service.policy() == RestartPolicy.ALWAYS:
+                    self.__restart(service)
+
+                if service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
+                    self.__restart(service)
+
+    def __spawn(self, service, logfile):
+        serviceprocess = ServiceProcess(service.name(), service.command(), self.__queue, logfile)
+        serviceprocess.start()
 
     def __remove(self, service):
-        logging.info("SUPERVISOR >> [{0}] with PID [{1}] terminates with returncode [0]".format(service.name(), service.pid()))
-        self.__services.remove(service)
+        logging.info("SUPERVISOR >> Removing [{0}] from services".format(service.name()))
+        del self.__services[service.name()]
 
     def __restart(self, service):
-        # TODO implement a restart strategy
-        # Reference: http://www.erlang.org/doc/design_principles/sup_princ.html
-        logging.info("SUPERVISOR >> Terminating... Trying to restart [{0}] with PID [{1}]".format(service.name(), service.pid()))
-        service.start(self.__logfile)
+        # TODO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
+        logging.info("SUPERVISOR >> Trying to restart [{0}]".format(service.name()))
+        self.__spawn(service, self.__logfile)
 
-    def stop(self):
-        self.__logfile.close()
-        for service in reversed(self.__services):
-            service.stop()
+# # # SERVICE PROCESS # # #
+
+from multiprocessing import Process
+
+class ServiceProcess(Process):
+    def __init__(self, name, command, queue, logfile=None):
+        super().__init__()
+        self.__name =  name
+        self.__command = command
+        self.__queue = queue
+        self.__logfile = logfile
+
+    def run(self):
+        process = subprocess.Popen(self.__command, shell=True, stdout=self.__logfile, stderr=self.__logfile)
+        logging.info("SERVICEPROCESS >> Spawned [{0}]: PID [{1}]".format(self.__name, process.pid))
+        try:
+            process.wait()
+        except KeyboardInterrupt:
+            process.poll()
+        finally:
+            logging.info("SERVICEPROCESS >> [{0}] with PID [{1}] terminates with returncode [{2}]".format(self.__name, process.pid, process.returncode))
+            self.__queue.put({'service_name' : self.__name, 'service_returncode' : process.returncode})
 
 # # # RESTART POLICIES # # #
 
@@ -133,7 +165,6 @@ class Service:
     def __init__(self, name, command, policy=RestartPolicy.NONE):
         self.__name = name
         self.__command = command
-        self.__process = None
         self.__policy = policy
 
     def name(self):
@@ -144,29 +175,6 @@ class Service:
 
     def policy(self):
         return self.__policy
-
-    def pid(self):
-        return self.__process.pid
-
-    def returncode(self):
-        return self.__process.returncode
-
-    def start(self, logfile=None):
-        # TODO if self.__can_run
-        self.__process = subprocess.Popen(self.__command, shell=True, stdout=logfile, stderr=logfile)
-        logging.info("SERVICE >> Spawned [{0}]: PID [{1}] and Restart Policy [{2}]".format(self.name(), self.pid(), self.policy()))
-
-    def stop(self):
-        try:
-            self.__process.terminate()
-            self.__process.poll()
-            logging.info("SERVICE >> Killed [{0}] with PID [{1}] returned with [{2}]".format(self.name(), self.pid(), self.returncode()))
-        except Exception as exception:
-            logging.info("SERVICE >> Unable to terminate [{0}] with PID [{1}]. Reason: {2}".format(self.name(), self.pid(), exception))
-
-    def ping(self):
-        self.__process.poll()
-        logging.info("SERVICE << Ping: [{0}] with PID [{1}] has a returncode [{2}]".format(self.name(), self.pid(), self.returncode()))
 
     def __str__(self):
         return self.name()
@@ -190,7 +198,4 @@ if __name__ == "__main__":
     for dependency in parser.dependencies():
         supervisor.add_dependency(dependency[0], dependency[1])
 
-    try:
-        supervisor.start()
-    except KeyboardInterrupt:
-        supervisor.stop()
+    supervisor.start()
