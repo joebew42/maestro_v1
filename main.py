@@ -67,7 +67,6 @@ class DAGScheduler:
 import subprocess
 
 from multiprocessing import Queue
-from time import sleep
 
 class Supervisor:
     def __init__(self, scheduler, logfile_name="supervisor.log"):
