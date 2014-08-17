@@ -64,7 +64,7 @@ class DAGScheduler:
 
 # # # SUPERVISOR # # #
 
-from multiprocessing import Queue
+from multiprocessing import Process, Queue
 
 class Supervisor:
     def __init__(self, scheduler, logfile_name="supervisor.log"):
@@ -113,8 +113,8 @@ class Supervisor:
                 self.__restart(service)
 
     def __spawn(self, service, logfile):
-        serviceprocess = ServiceProcess(service, self.__queue, logfile)
-        serviceprocess.start()
+        process = Process(target=service_process, args=(service, self.__queue, logfile,))
+        process.start()
 
     def __remove(self, service):
         logging.info("SUPERVISOR >> Removing [{0}] from services".format(service.name()))
@@ -131,31 +131,24 @@ import sys
 import signal
 import subprocess
 
-from multiprocessing import Process
+def service_process(service, queue, logfile=None):
 
-class ServiceProcess(Process):
-    def __init__(self, service, queue, logfile=None):
-        super().__init__()
-        self.__service = service
-        self.__queue = queue
-        self.__logfile = logfile
-
-    def run(self):
-        signal.signal(signal.SIGTERM, self.__signal_handler)
-
-        process = subprocess.Popen(self.__service.command(), shell=True, stdout=self.__logfile, stderr=self.__logfile)
-        logging.info("SERVICEPROCESS >> Spawned [{0}]: PID [{1}] with restart policy [{2}]".format(self.__service.name(), process.pid, self.__service.policy()))
-        try:
-            process.wait()
-        except KeyboardInterrupt:
-            process.poll()
-        finally:
-            logging.info("SERVICEPROCESS >> [{0}] with PID [{1}] exit with [{2}]".format(self.__service.name(), process.pid, process.returncode))
-            self.__queue.put({'service_name' : self.__service.name(), 'service_returncode' : process.returncode})
-
-    def __signal_handler(self, signum, frame):
+    def __signal_handler(signum, frame):
         logging.info("SERVICEPROCESS >> Received signal [{0}]".format(signum))
         sys.exit(signum)
+
+    signal.signal(signal.SIGTERM, __signal_handler)
+
+    process = subprocess.Popen(service.command(), shell=True, stdout=logfile, stderr=logfile)
+    logging.info("SERVICEPROCESS >> Spawned [{0}]: PID [{1}] with restart policy [{2}]".format(service.name(), process.pid, service.policy()))
+    try:
+        process.wait()
+    except KeyboardInterrupt:
+        process.poll()
+    finally:
+        logging.info("SERVICEPROCESS >> [{0}] with PID [{1}] exit with [{2}]".format(service.name(), process.pid, process.returncode))
+        queue.put({'service_name' : service.name(), 'service_returncode' : process.returncode})
+
 
 # # # RESTART POLICIES # # #
 
