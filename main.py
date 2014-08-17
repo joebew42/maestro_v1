@@ -119,7 +119,6 @@ class Supervisor:
     def __remove(self, service):
         logging.info("SUPERVISOR >> Removing [{0}] from services".format(service.name()))
         del self.__services[service.name()]
-        del self.__child_pids[service.name()]
 
     def __restart(self, service):
         # TODO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
