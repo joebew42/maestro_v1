@@ -64,15 +64,12 @@ class DAGScheduler:
 
 # # # SUPERVISOR # # #
 
-import subprocess
-
 from multiprocessing import Queue
 
 class Supervisor:
     def __init__(self, scheduler, logfile_name="supervisor.log"):
         self.__scheduler = scheduler
         self.__services = {}
-        self.__child_pids = {}
         self.__logfile_name = logfile_name
         self.__logfile = None
         self.__queue = Queue()
@@ -106,20 +103,18 @@ class Supervisor:
             service = self.__services[msg['service_name']]
             returncode = msg['service_returncode']
 
-            if returncode is not None:
-                if service.policy() == RestartPolicy.NONE:
-                    self.__remove(service)
+            if service.policy() == RestartPolicy.NONE:
+                self.__remove(service)
 
-                if service.policy() == RestartPolicy.ALWAYS:
-                    self.__restart(service)
+            if service.policy() == RestartPolicy.ALWAYS:
+                self.__restart(service)
 
-                if service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
-                    self.__restart(service)
+            if service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
+                self.__restart(service)
 
     def __spawn(self, service, logfile):
-        serviceprocess = ServiceProcess(service.name(), service.command(), self.__queue, logfile)
+        serviceprocess = ServiceProcess(service, self.__queue, logfile)
         serviceprocess.start()
-        self.__child_pids[service.name()] = serviceprocess.pid
 
     def __remove(self, service):
         logging.info("SUPERVISOR >> Removing [{0}] from services".format(service.name()))
@@ -133,26 +128,35 @@ class Supervisor:
 
 # # # SERVICE PROCESS # # #
 
+import sys
+import signal
+import subprocess
+
 from multiprocessing import Process
 
 class ServiceProcess(Process):
-    def __init__(self, name, command, queue, logfile=None):
+    def __init__(self, service, queue, logfile=None):
         super().__init__()
-        self.__name =  name
-        self.__command = command
+        self.__service = service
         self.__queue = queue
         self.__logfile = logfile
 
     def run(self):
-        process = subprocess.Popen(self.__command, shell=True, stdout=self.__logfile, stderr=self.__logfile)
-        logging.info("SERVICEPROCESS >> Spawned [{0}]: PID [{1}]".format(self.__name, process.pid))
+        signal.signal(signal.SIGTERM, self.__signal_handler)
+
+        process = subprocess.Popen(self.__service.command(), shell=True, stdout=self.__logfile, stderr=self.__logfile)
+        logging.info("SERVICEPROCESS >> Spawned [{0}]: PID [{1}] with restart policy [{2}]".format(self.__service.name(), process.pid, self.__service.policy()))
         try:
             process.wait()
         except KeyboardInterrupt:
             process.poll()
         finally:
-            logging.info("SERVICEPROCESS >> [{0}] with PID [{1}] terminates with returncode [{2}]".format(self.__name, process.pid, process.returncode))
-            self.__queue.put({'service_name' : self.__name, 'service_returncode' : process.returncode})
+            logging.info("SERVICEPROCESS >> [{0}] with PID [{1}] exit with [{2}]".format(self.__service.name(), process.pid, process.returncode))
+            self.__queue.put({'service_name' : self.__service.name(), 'service_returncode' : process.returncode})
+
+    def __signal_handler(self, signum, frame):
+        logging.info("SERVICEPROCESS >> Received signal [{0}]".format(signum))
+        sys.exit(signum)
 
 # # # RESTART POLICIES # # #
 
@@ -184,8 +188,6 @@ class Service:
     __repr__ = __str__
 
 # # # MAIN # # #
-
-import sys
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
