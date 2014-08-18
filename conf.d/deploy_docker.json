@@ -1,0 +1,21 @@
+[
+  {
+    "name"    : "docker_while",
+    "restart" : "always",
+    "provider": "docker",
+    "params"  : {
+      "image"   : "busybox:ubuntu-14.04",
+      "command" : "while [ true ]; do echo \"hello\"; sleep 5; done"
+    }
+  },
+  {
+    "name"    : "docker_sleep",
+    "restart" : "always",
+    "requires": [ "docker_while" ],
+    "provider": "docker",
+    "params"  : {
+      "image"   : "busybox:ubuntu-14.04",
+      "command" : "sleep 10"
+    }
+  }
+]

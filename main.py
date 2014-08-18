@@ -20,8 +20,11 @@ class JSONParser:
         services = {}
         for item in json:
             name = item['name']
+            command = item.get('command', '')
             policy = item.get('restart', RestartPolicy.NONE)
-            services[name] = Service(name, item['command'], policy)
+            provider = item.get('provider', Provider.DEFAULT)
+            params = item.get('params', None)
+            services[name] = Service(name, command, policy, provider, params)
         logging.info("JSONPARSER >> Resolved services: {}".format(services.values()))
         return services
 
@@ -113,7 +116,13 @@ class Supervisor:
                 self.__restart(service)
 
     def __spawn(self, service, logfile):
-        process = Process(target=service_process, args=(service, self.__queue, logfile,))
+        if service.provider() == Provider.DEFAULT:
+            target_process = command_process
+
+        if service.provider() == Provider.DOCKER:
+            target_process = docker_process
+
+        process = Process(target=target_process, args=(service, self.__queue, logfile,))
         process.start()
 
     def __remove(self, service):
@@ -125,30 +134,56 @@ class Supervisor:
         logging.info("SUPERVISOR >> Trying to restart [{0}]".format(service.name()))
         self.__spawn(service, self.__logfile)
 
-# # # SERVICE PROCESS # # #
+# # # COMMAND PROCESS # # #
 
 import sys
 import signal
 import subprocess
 
-def service_process(service, queue, logfile=None):
+def command_process(service, queue, logfile=None):
 
     def __signal_handler(signum, frame):
-        logging.info("SERVICEPROCESS >> Received signal [{0}]".format(signum))
+        logging.info("COMMANDPROCESS >> Received signal [{0}]".format(signum))
         sys.exit(signum)
 
     signal.signal(signal.SIGTERM, __signal_handler)
 
     process = subprocess.Popen(service.command(), shell=True, stdout=logfile, stderr=logfile)
-    logging.info("SERVICEPROCESS >> Spawned [{0}]: PID [{1}] with restart policy [{2}]".format(service.name(), process.pid, service.policy()))
+    logging.info("COMMANDPROCESS >> Spawned [{0}]: PID [{1}] with restart policy [{2}]".format(service.name(), process.pid, service.policy()))
     try:
         process.wait()
     except KeyboardInterrupt:
         process.poll()
     finally:
-        logging.info("SERVICEPROCESS >> [{0}] with PID [{1}] exit with [{2}]".format(service.name(), process.pid, process.returncode))
+        logging.info("COMMANDPROCESS >> [{0}] with PID [{1}] exit with [{2}]".format(service.name(), process.pid, process.returncode))
         queue.put({'service_name' : service.name(), 'service_returncode' : process.returncode})
 
+
+# # # DOCKER PROCESS # # #
+
+import os
+
+def docker_process(service, queue, logfile=None):
+    # TODO: Docker
+    # handle ports and other stuff
+    cid_file_path = "docker_cids/{0}".format(service.name())
+    docker_cmd = ["docker", "run", "--cidfile=\"{0}\"".format(cid_file_path), service.params()['image'], "sh", "-c", service.params()['command']]
+    process = subprocess.Popen(docker_cmd, shell=False, stdout=logfile, stderr=logfile)
+
+    logging.info("DOCKERPROCESS >> Spawned [{0}]: PID [{1}] with restart policy [{2}]".format(service.name(), process.pid, service.policy()))
+    try:
+        process.wait()
+    except KeyboardInterrupt:
+        process.poll()
+    finally:
+        with open(cid_file_path, 'r') as cid_file:
+            cid = cid_file.read()
+
+        subprocess.Popen(["docker", "kill", cid], shell=False, stdout=logfile, stderr=logfile).wait()
+        os.remove(cid_file_path)
+
+        logging.info("DOCKERPROCESS >> [{0}] with PID [{1}] exit with [{2}]".format(service.name(), process.pid, process.returncode))
+        queue.put({'service_name' : service.name(), 'service_returncode' : process.returncode})
 
 # # # RESTART POLICIES # # #
 
@@ -157,13 +192,21 @@ class RestartPolicy:
     ALWAYS   = "always"
     ON_ERROR = "on-error"
 
+
+# # # PROVIDERS # # #
+class Provider:
+    DEFAULT = "command"
+    DOCKER  = "docker"
+
 # # # SERVICE # # #
 
 class Service:
-    def __init__(self, name, command, policy=RestartPolicy.NONE):
+    def __init__(self, name, command, policy=RestartPolicy.NONE, provider=Provider.DEFAULT, params=None):
         self.__name = name
         self.__command = command
         self.__policy = policy
+        self.__provider = provider
+        self.__params = params
 
     def name(self):
         return self.__name
@@ -174,8 +217,14 @@ class Service:
     def policy(self):
         return self.__policy
 
+    def provider(self):
+        return self.__provider
+
+    def params(self):
+        return self.__params
+
     def __str__(self):
-        return self.name()
+        return "{0}:{1}".format(self.__name, self.__provider)
 
     __repr__ = __str__
 
