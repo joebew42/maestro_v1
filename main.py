@@ -117,12 +117,11 @@ class Supervisor:
 
     def __spawn(self, service, logfile):
         if service.provider() == Provider.DEFAULT:
-            target_process = command_process
+            process = CommandProcess(service, self.__queue, logfile)
 
         if service.provider() == Provider.DOCKER:
-            target_process = docker_process
+            process = DockerProcess(service, self.__queue, logfile)
 
-        process = Process(target=target_process, args=(service, self.__queue, logfile,))
         process.start()
 
     def __remove(self, service):
@@ -134,56 +133,69 @@ class Supervisor:
         logging.info("SUPERVISOR >> Trying to restart [{0}]".format(service.name()))
         self.__spawn(service, self.__logfile)
 
-# # # COMMAND PROCESS # # #
+# # # ABSTRACT PROCESS # # #
 
-import sys
-import signal
+class AbstractProcess(Process):
+    """
+    Abstract class used to describe each processes instance
+    """
+    def __init__(self, service, queue, logfile=None):
+        super().__init__()
+        self._service = service
+        self._queue = queue
+        self._logfile = logfile
+
+    def run(self):
+        process = self._spawn_process()
+        logging.info("{0} >> Spawned [{1}]: PID [{2}] with restart policy [{3}]".format(self.__class__.__name__.upper(), self._service.name(), process.pid, self._service.policy()))
+        try:
+            process.wait()
+        except KeyboardInterrupt:
+            process.poll()
+        finally:
+            self._post_exec()
+
+            logging.info("{0} >> [{1}] with PID [{2}] exit with [{3}]".format(self.__class__.__name__.upper(), self._service.name(), process.pid, process.returncode))
+            self._queue.put({'service_name' : self._service.name(), 'service_returncode' : process.returncode})
+
+    def _spawn_process(self):
+        pass
+
+    def _post_exec(self):
+        pass
+
+# # # COMMAND SERVICE PROCESS # # #
+
 import subprocess
 
-def command_process(service, queue, logfile=None):
-
-    def __signal_handler(signum, frame):
-        logging.info("COMMANDPROCESS >> Received signal [{0}]".format(signum))
-        sys.exit(signum)
-
-    signal.signal(signal.SIGTERM, __signal_handler)
-
-    process = subprocess.Popen(service.command(), shell=True, stdout=logfile, stderr=logfile)
-    logging.info("COMMANDPROCESS >> Spawned [{0}]: PID [{1}] with restart policy [{2}]".format(service.name(), process.pid, service.policy()))
-    try:
-        process.wait()
-    except KeyboardInterrupt:
-        process.poll()
-    finally:
-        logging.info("COMMANDPROCESS >> [{0}] with PID [{1}] exit with [{2}]".format(service.name(), process.pid, process.returncode))
-        queue.put({'service_name' : service.name(), 'service_returncode' : process.returncode})
-
+class CommandProcess(AbstractProcess):
+    """
+    Basic service process
+    """
+    def _spawn_process(self):
+        return subprocess.Popen(self._service.command(), shell=True, stdout=self._logfile, stderr=self._logfile)
 
 # # # DOCKER PROCESS # # #
 
 import os
 
-def docker_process(service, queue, logfile=None):
-    # TODO: Docker
-    # handle ports and other stuff
-    cid_file_path = "docker_cids/{0}".format(service.name())
-    docker_cmd = ["docker", "run", "--cidfile=\"{0}\"".format(cid_file_path), service.params()['image'], "sh", "-c", service.params()['command']]
-    process = subprocess.Popen(docker_cmd, shell=False, stdout=logfile, stderr=logfile)
+class DockerProcess(AbstractProcess):
+    """
+    Docker service process
+    """
+    def _spawn_process(self):
+        # TODO: Docker
+        # handle ports and other stuff
+        self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
+        docker_cmd = ["docker", "run", "--cidfile=\"{0}\"".format(self.__cid_file_path), self._service.params()['image'], "sh", "-c", self._service.params()['command']]
+        return subprocess.Popen(docker_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
 
-    logging.info("DOCKERPROCESS >> Spawned [{0}]: PID [{1}] with restart policy [{2}]".format(service.name(), process.pid, service.policy()))
-    try:
-        process.wait()
-    except KeyboardInterrupt:
-        process.poll()
-    finally:
-        with open(cid_file_path, 'r') as cid_file:
+    def _post_exec(self):
+        with open(self.__cid_file_path, 'r') as cid_file:
             cid = cid_file.read()
 
-        subprocess.Popen(["docker", "kill", cid], shell=False, stdout=logfile, stderr=logfile).wait()
-        os.remove(cid_file_path)
-
-        logging.info("DOCKERPROCESS >> [{0}] with PID [{1}] exit with [{2}]".format(service.name(), process.pid, process.returncode))
-        queue.put({'service_name' : service.name(), 'service_returncode' : process.returncode})
+        subprocess.Popen(["docker", "kill", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
+        os.remove(self.__cid_file_path)
 
 # # # RESTART POLICIES # # #
 
@@ -229,6 +241,8 @@ class Service:
     __repr__ = __str__
 
 # # # MAIN # # #
+
+import sys
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
