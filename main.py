@@ -187,7 +187,7 @@ class DockerProcess(AbstractProcess):
         # TODO: Docker
         # handle ports and other stuff
         self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
-        docker_cmd = ["docker", "run", "--cidfile=\"{0}\"".format(self.__cid_file_path), self._service.params()['image'], "sh", "-c", self._service.params()['command']]
+        docker_cmd = ["docker", "run", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name()), self._service.params()['image'], "sh", "-c", self._service.params()['command']]
         return subprocess.Popen(docker_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
 
     def _post_exec(self):
@@ -195,6 +195,7 @@ class DockerProcess(AbstractProcess):
             cid = cid_file.read()
 
         subprocess.Popen(["docker", "kill", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
+        subprocess.Popen(["docker", "rm", "-f", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
         os.remove(self.__cid_file_path)
 
 # # # RESTART POLICIES # # #
