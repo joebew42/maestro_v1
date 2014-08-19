@@ -164,7 +164,7 @@ class AbstractProcess(Process):
     def _post_exec(self):
         pass
 
-# # # COMMAND SERVICE PROCESS # # #
+# # # COMMAND PROCESS # # #
 
 import subprocess
 
