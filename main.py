@@ -215,11 +215,11 @@ class DockerProcess(AbstractProcess):
         # handle here ports
         # TODO
 
-        # handle expose option
+        # handle expose
         for expose in self._service.params().get('expose', []):
             docker_cmd += ["--expose=\"{0}\"".format(expose)]
 
-        # handle here links
+        # handle link
         for link in self._service.params().get('link', []):
             docker_cmd += ["--link=\"{0}\"".format(link)]
 
