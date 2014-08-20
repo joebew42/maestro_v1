@@ -211,9 +211,10 @@ class DockerProcess(AbstractProcess):
     """
     def _spawn_process(self):
         self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
-        docker_cmd = ["docker", "run", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
-        # handle here ports
-        # TODO
+        docker_cmd = ["docker", "run", "-t", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
+        # handle ports
+        for port in self._service.params().get('port', []):
+            docker_cmd += ["--publish=\"{0}\"".format(port)]
 
         # handle expose
         for expose in self._service.params().get('expose', []):
@@ -231,7 +232,7 @@ class DockerProcess(AbstractProcess):
             cid = cid_file.read()
 
         subprocess.Popen(["docker", "kill", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
-        #subprocess.Popen(["docker", "rm", "-f", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
+        subprocess.Popen(["docker", "rm", "-f", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
         os.remove(self.__cid_file_path)
 
     def _has_started(self):
