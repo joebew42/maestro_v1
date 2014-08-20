@@ -90,7 +90,7 @@ class Supervisor:
             self.__services[service.name()] = service
             self.__spawn(service, self.__logfile)
 
-        logging.info("SUPERVISOR >> Start monitoring")
+        logging.info("SUPERVISOR >> Monitoring processes")
         try:
             self.__run()
         except KeyboardInterrupt:
@@ -99,21 +99,27 @@ class Supervisor:
             self.__logfile.close()
 
     def __run(self):
-        while(True):
-            msg = self.__queue.get(True, None)
-            logging.info("SUPERVISOR << Received message [{0}]".format(msg))
+        while True:
+            message = self.__queue.get(True, None)
+            self.__handle(message)
 
-            service = self.__services[msg['service_name']]
-            returncode = msg['service_returncode']
+    def __handle(self, message):
+        logging.info("SUPERVISOR << Received message [{0}]".format(message))
 
-            if service.policy() == RestartPolicy.NONE:
-                self.__remove(service)
+        if 'service_returncode' in message:
+            self.__handle_service_returncode(message['service_name'], message['service_returncode'])
 
-            if service.policy() == RestartPolicy.ALWAYS:
-                self.__restart(service)
+    def __handle_service_returncode(self, service_name, returncode):
+        service = self.__services[service_name]
 
-            if service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
-                self.__restart(service)
+        if service.policy() == RestartPolicy.NONE:
+            self.__remove(service)
+
+        if service.policy() == RestartPolicy.ALWAYS:
+            self.__restart(service)
+
+        if service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
+            self.__restart(service)
 
     def __spawn(self, service, logfile):
         if service.provider() == Provider.DEFAULT:
@@ -123,6 +129,14 @@ class Supervisor:
             process = DockerProcess(service, self.__queue, logfile)
 
         process.start()
+
+        message = self.__queue.get(True, None)
+        while not self.__is_started(service, message):
+            self.__handle(message);
+            message = self.__queue.get(True, None)
+
+    def __is_started(self, service, message):
+        return 'service_status' in message and message['service_status'] == 'started' and message['service_name'] == service.name()
 
     def __remove(self, service):
         logging.info("SUPERVISOR >> Removing [{0}] from services".format(service.name()))
@@ -135,6 +149,8 @@ class Supervisor:
 
 # # # ABSTRACT PROCESS # # #
 
+from time import sleep
+
 class AbstractProcess(Process):
     """
     Abstract class used to describe each processes instance
@@ -144,19 +160,29 @@ class AbstractProcess(Process):
         self._service = service
         self._queue = queue
         self._logfile = logfile
+        self._process = None
 
     def run(self):
-        process = self._spawn_process()
-        logging.info("{0} >> Spawned [{1}]: PID [{2}] with restart policy [{3}]".format(self.__class__.__name__.upper(), self._service.name(), process.pid, self._service.policy()))
+        self._process = self._spawn_process()
+        logging.info("{0} >> Spawned [{1}]: PID [{2}] with restart policy [{3}]".format(self.__class__.__name__.upper(), self._service.name(), self._process.pid, self._service.policy()))
         try:
-            process.wait()
+            self._wait_until_started()
+            self._process.wait()
         except KeyboardInterrupt:
-            process.poll()
+            self._process.poll()
         finally:
             self._post_exec()
 
-            logging.info("{0} >> [{1}] with PID [{2}] exit with [{3}]".format(self.__class__.__name__.upper(), self._service.name(), process.pid, process.returncode))
-            self._queue.put({'service_name' : self._service.name(), 'service_returncode' : process.returncode})
+            logging.info("{0} >> [{1}] with PID [{2}] exit with [{3}]".format(self.__class__.__name__.upper(), self._service.name(), self._process.pid, self._process.returncode))
+            self._queue.put({'service_name' : self._service.name(), 'service_returncode' : self._process.returncode})
+
+    def _wait_until_started(self):
+        while self._has_started() is not True:
+            sleep(1)
+        self._queue.put({'service_name' : self._service.name(), 'service_status' : 'started'})
+
+    def _has_started(self):
+        return True
 
     def _spawn_process(self):
         pass
@@ -188,11 +214,15 @@ class DockerProcess(AbstractProcess):
         docker_cmd = ["docker", "run", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
         # handle here ports
         # TODO
+
         # handle expose option
         for expose in self._service.params().get('expose', []):
             docker_cmd += ["--expose=\"{0}\"".format(expose)]
+
         # handle here links
-        # TODO
+        for link in self._service.params().get('link', []):
+            docker_cmd += ["--link=\"{0}\"".format(link)]
+
         docker_cmd += [self._service.params()['image'], "sh", "-c", self._service.params()['command']]
         return subprocess.Popen(docker_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
 
@@ -201,8 +231,11 @@ class DockerProcess(AbstractProcess):
             cid = cid_file.read()
 
         subprocess.Popen(["docker", "kill", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
-        subprocess.Popen(["docker", "rm", "-f", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
+        #subprocess.Popen(["docker", "rm", "-f", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
         os.remove(self.__cid_file_path)
+
+    def _has_started(self):
+        return os.path.exists(self.__cid_file_path)
 
 # # # RESTART POLICIES # # #
 
