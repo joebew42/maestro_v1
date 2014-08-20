@@ -184,10 +184,9 @@ class DockerProcess(AbstractProcess):
     Docker service process
     """
     def _spawn_process(self):
-        # TODO: Docker
-        # handle ports and other stuff
         self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
-        docker_cmd = ["docker", "run", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name()), self._service.params()['image'], "sh", "-c", self._service.params()['command']]
+        docker_cmd = ["docker", "run", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
+        docker_cmd += [self._service.params()['image'], "sh", "-c", self._service.params()['command']]
         return subprocess.Popen(docker_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
 
     def _post_exec(self):
