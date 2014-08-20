@@ -186,6 +186,13 @@ class DockerProcess(AbstractProcess):
     def _spawn_process(self):
         self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
         docker_cmd = ["docker", "run", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
+        # handle here ports
+        # TODO
+        # handle expose option
+        for expose in self._service.params().get('expose', []):
+            docker_cmd += ["--expose=\"{0}\"".format(expose)]
+        # handle here links
+        # TODO
         docker_cmd += [self._service.params()['image'], "sh", "-c", self._service.params()['command']]
         return subprocess.Popen(docker_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
 
