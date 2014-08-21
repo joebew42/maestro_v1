@@ -160,21 +160,20 @@ class AbstractProcess(Process):
         self._service = service
         self._queue = queue
         self._logfile = logfile
-        self._process = None
 
     def run(self):
-        self._process = self._spawn_process()
-        logging.info("{0} >> Spawned [{1}]: PID [{2}] with restart policy [{3}]".format(self.__class__.__name__.upper(), self._service.name(), self._process.pid, self._service.policy()))
+        process = self._spawn_process()
+        logging.info("{0} >> Spawned [{1}]: PID [{2}] with restart policy [{3}]".format(self.__class__.__name__.upper(), self._service.name(), process.pid, self._service.policy()))
         try:
             self._wait_until_started()
-            self._process.wait()
+            process.wait()
         except KeyboardInterrupt:
-            self._process.poll()
+            process.poll()
         finally:
             self._post_exec()
 
-            logging.info("{0} >> [{1}] with PID [{2}] exit with [{3}]".format(self.__class__.__name__.upper(), self._service.name(), self._process.pid, self._process.returncode))
-            self._queue.put({'service_name' : self._service.name(), 'service_returncode' : self._process.returncode})
+            logging.info("{0} >> [{1}] with PID [{2}] exit with [{3}]".format(self.__class__.__name__.upper(), self._service.name(), process.pid, process.returncode))
+            self._queue.put({'service_name' : self._service.name(), 'service_returncode' : process.returncode})
 
     def _wait_until_started(self):
         while self._has_started() is not True:
