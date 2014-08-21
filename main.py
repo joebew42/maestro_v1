@@ -245,8 +245,8 @@ class RestartPolicy:
     ALWAYS   = "always"
     ON_ERROR = "on-error"
 
-
 # # # PROVIDERS # # #
+
 class Provider:
     DEFAULT = "command"
     DOCKER  = "docker"
