@@ -125,6 +125,9 @@ class Supervisor:
         if service.provider() == Provider.DEFAULT:
             process = CommandProcess(service, self.__queue, logfile)
 
+        if service.provider() == Provider.DOCKERFILE:
+            process = DockerfileProcess(service, self.__queue, logfile)
+
         if service.provider() == Provider.DOCKER:
             process = DockerProcess(service, self.__queue, logfile)
 
@@ -195,10 +198,20 @@ import subprocess
 
 class CommandProcess(AbstractProcess):
     """
-    Basic service process
+    Command process
     """
     def _spawn_process(self):
         return subprocess.Popen(self._service.command(), shell=True, stdout=self._logfile, stderr=self._logfile)
+
+# # # DOCKERFILE PROCESS # # #
+
+import subprocess
+
+class DockerfileProcess(AbstractProcess):
+    """
+    Dockerfile process
+    """
+    pass
 
 # # # DOCKER PROCESS # # #
 
@@ -206,7 +219,7 @@ import os
 
 class DockerProcess(AbstractProcess):
     """
-    Docker service process
+    Docker process
     """
     def _spawn_process(self):
         self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
@@ -248,6 +261,7 @@ class RestartPolicy:
 
 class Provider:
     DEFAULT = "command"
+    DOCKERFILE = "dockerfile"
     DOCKER  = "docker"
 
 # # # SERVICE # # #

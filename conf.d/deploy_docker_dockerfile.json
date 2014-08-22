@@ -1,0 +1,21 @@
+[
+  {
+    "name"    : "echo-server-setup",
+    "provider": "dockerfile",
+    "params"  : {
+      "path" : "dockerfiles/ubuntu-14.04-echo-server",
+      "image": "ubuntu-14.04:echo-server"
+    }
+  },
+  {
+    "name"    : "echo-server",
+    "restart" : "always",
+    "requires": [ "echo-server-setup" ],
+    "provider": "docker",
+    "params"  : {
+      "image"   : "ubuntu-14.04:echo-server",
+      "command" : "echo-server -l 8080",
+      "port"  : [ "65432:8080" ]
+    }
+  }
+]
