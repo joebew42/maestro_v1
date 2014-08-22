@@ -3,7 +3,7 @@
     "name"    : "echo-server-setup",
     "provider": "dockerfile",
     "params"  : {
-      "path" : "dockerfiles/ubuntu-14.04-echo-server",
+      "path" : "file://dockerfiles/ubuntu-14.04-echo-server",
       "image": "ubuntu-14.04:echo-server"
     }
   },
