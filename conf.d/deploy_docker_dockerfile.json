@@ -1,21 +1,20 @@
 [
   {
-    "name"    : "echo-server-setup",
+    "name"    : "nginx-setup",
     "provider": "dockerfile",
     "params"  : {
-      "path" : "file://dockerfiles/ubuntu-14.04-echo-server",
-      "image": "ubuntu-14.04:echo-server"
+      "path" : "dockerfiles/ubuntu-14.04-nginx",
+      "image": "ubuntu-14.04-nginx"
     }
   },
   {
-    "name"    : "echo-server",
+    "name"    : "nginx",
     "restart" : "always",
-    "requires": [ "echo-server-setup" ],
+    "requires": [ "nginx-setup" ],
     "provider": "docker",
     "params"  : {
-      "image"   : "ubuntu-14.04:echo-server",
-      "command" : "echo-server -l 8080",
-      "port"  : [ "65432:8080" ]
+      "image"   : "ubuntu-14.04-nginx",
+      "port"  : [ "65432:80" ]
     }
   }
 ]

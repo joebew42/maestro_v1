@@ -211,7 +211,13 @@ class DockerfileProcess(AbstractProcess):
     """
     Dockerfile process
     """
-    pass
+    def _spawn_process(self):
+        dockerfile_cmd = ["docker", "build", "-t", self._service.params()['image'], self._service.params()['path']]
+        return subprocess.Popen(dockerfile_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
+
+    def _has_started(self):
+        cmd = "docker images | grep \"{0}\" | awk '{{print $3}}'".format(self._service.params()['image'])
+        return len(subprocess.check_output(cmd, shell=True)) > 0
 
 # # # DOCKER PROCESS # # #
 
@@ -236,7 +242,13 @@ class DockerProcess(AbstractProcess):
         for link in self._service.params().get('link', []):
             docker_cmd += ["--link=\"{0}\"".format(link)]
 
-        docker_cmd += [self._service.params()['image'], "sh", "-c", self._service.params()['command']]
+        docker_cmd += [self._service.params()['image']]
+
+        # handle command
+        command = self._service.params().get('command', None)
+        if command is not None:
+            docker_cmd += ["sh", "-c", command]
+
         return subprocess.Popen(docker_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
 
     def _post_exec(self):
