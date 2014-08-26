@@ -1,23 +1,23 @@
 [
   {
-    "name"    : "postgresql",
+    "name"    : "mysql",
     "restart" : "always",
     "provider": "docker",
     "params"  : {
       "image"   : "busybox:ubuntu-14.04",
       "command" : "while [ true ]; do echo \"hello\"; sleep 5; done",
-      "expose"  : [ 5432 ]
+      "expose"  : [ 3306 ]
     }
   },
   {
-    "name"    : "client",
+    "name"    : "wordpress",
     "restart" : "always",
-    "requires": [ "postgresql" ],
+    "requires": [ "mysql" ],
     "provider": "docker",
     "params"  : {
       "image"   : "busybox:ubuntu-14.04",
       "command" : "sleep 10",
-      "link"    : [ "postgresql:pg" ]
+      "link"    : [ "mysql:ms" ]
     }
   }
 ]
