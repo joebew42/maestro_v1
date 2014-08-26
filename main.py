@@ -65,6 +65,9 @@ class DAGScheduler:
         logging.info("SCHEDULER >> Computed topological sorting of the services is: {}".format(sorted_services))
         return sorted_services
 
+    def __getitem__(self, index):
+        return self.__services.node[index]['service']
+
 # # # SUPERVISOR # # #
 
 from multiprocessing import Process, Queue
@@ -72,7 +75,6 @@ from multiprocessing import Process, Queue
 class Supervisor:
     def __init__(self, scheduler, logfile_name="supervisor.log"):
         self.__scheduler = scheduler
-        self.__services = {}
         self.__logfile_name = logfile_name
         self.__logfile = None
         self.__queue = Queue()
@@ -83,11 +85,13 @@ class Supervisor:
     def add_dependency(self, service, required_service):
         self.__scheduler.add_dependency(service, required_service)
 
+    def __service(self, name):
+        return self.__scheduler[name]
+
     def start(self):
         self.__logfile = open(self.__logfile_name, "a")
 
         for service in self.__scheduler.sorted_services():
-            self.__services[service.name()] = service
             self.__spawn(service, self.__logfile)
 
         logging.info("SUPERVISOR >> Monitoring processes")
@@ -110,10 +114,10 @@ class Supervisor:
             self.__handle_service_returncode(message['service_name'], message['service_returncode'])
 
     def __handle_service_returncode(self, service_name, returncode):
-        service = self.__services[service_name]
+        service = self.__service(service_name)
 
         if service.policy() == RestartPolicy.NONE:
-            self.__remove(service)
+            self.__exited(service)
 
         if service.policy() == RestartPolicy.ALWAYS:
             self.__restart(service)
@@ -141,9 +145,8 @@ class Supervisor:
     def __is_started(self, service, message):
         return 'service_status' in message and message['service_status'] == 'started' and message['service_name'] == service.name()
 
-    def __remove(self, service):
-        logging.info("SUPERVISOR >> Removing [{0}] from services".format(service.name()))
-        del self.__services[service.name()]
+    def __exited(self, service):
+        logging.info("SUPERVISOR >> [{0}] exited with [{1}] policy".format(service.name(), service.policy()))
 
     def __restart(self, service):
         # TODO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
