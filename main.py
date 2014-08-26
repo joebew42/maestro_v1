@@ -215,11 +215,11 @@ class DockerfileProcess(AbstractProcess):
     Dockerfile process
     """
     def _spawn_process(self):
-        dockerfile_cmd = ["docker", "build", "-t", self._service.params()['image'], self._service.params()['path']]
+        dockerfile_cmd = ["docker", "build", "-t", self._service.param('image'), self._service.param('path')]
         return subprocess.Popen(dockerfile_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
 
     def _has_started(self):
-        cmd = "docker images | grep \"{0}\" | awk '{{print $3}}'".format(self._service.params()['image'])
+        cmd = "docker images | grep \"{0}\" | awk '{{print $3}}'".format(self._service.param('image'))
         return len(subprocess.check_output(cmd, shell=True)) > 0
 
 # # # DOCKER PROCESS # # #
@@ -234,25 +234,25 @@ class DockerProcess(AbstractProcess):
         self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
         docker_cmd = ["docker", "run", "-t", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
         # handle ports
-        for port in self._service.params().get('port', []):
+        for port in self._service.params('port'):
             docker_cmd += ["--publish=\"{0}\"".format(port)]
 
         # handle expose
-        for expose in self._service.params().get('expose', []):
+        for expose in self._service.params('expose'):
             docker_cmd += ["--expose=\"{0}\"".format(expose)]
 
         # handle link
-        for link in self._service.params().get('link', []):
+        for link in self._service.params('link'):
             docker_cmd += ["--link=\"{0}\"".format(link)]
 
         # handle env
-        for env in self._service.params().get('env', []):
+        for env in self._service.params('env'):
             docker_cmd += ["--env=\"{0}\"".format(env)]
 
-        docker_cmd += [self._service.params()['image']]
+        docker_cmd += [self._service.param('image')]
 
         # handle command
-        command = self._service.params().get('command', None)
+        command = self._service.param('command')
         if command is not None:
             docker_cmd += ["sh", "-c", command]
 
@@ -305,8 +305,11 @@ class Service:
     def provider(self):
         return self.__provider
 
-    def params(self):
-        return self.__params
+    def params(self, index):
+        return self.__params.get(index, [])
+
+    def param(self, index):
+        return self.__params.get(index, None)
 
     def __str__(self):
         return "{0}:{1}".format(self.__name, self.__provider)
