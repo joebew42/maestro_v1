@@ -245,6 +245,10 @@ class DockerProcess(AbstractProcess):
         for link in self._service.params().get('link', []):
             docker_cmd += ["--link=\"{0}\"".format(link)]
 
+        # handle env
+        for env in self._service.params().get('env', []):
+            docker_cmd += ["--env=\"{0}\"".format(env)]
+
         docker_cmd += [self._service.params()['image']]
 
         # handle command

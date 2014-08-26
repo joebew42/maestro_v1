@@ -1,0 +1,12 @@
+[
+  {
+    "name"    : "env_variables",
+    "restart" : "none",
+    "provider": "docker",
+    "params"  : {
+      "image"   : "busybox:ubuntu-14.04",
+      "command" : "echo $MYVAR",
+      "env"     : [ "MYVAR=HELLO" ]
+    }
+  }
+]
