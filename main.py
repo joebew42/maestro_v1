@@ -78,6 +78,7 @@ class Supervisor:
         self.__logfile_name = logfile_name
         self.__logfile = None
         self.__queue = Queue()
+        self.__execution_queue = []
 
     def add(self, service):
         self.__scheduler.add(service)
@@ -90,9 +91,8 @@ class Supervisor:
 
     def start(self):
         self.__logfile = open(self.__logfile_name, "a")
-
-        for service in self.__scheduler.sorted_services():
-            self.__spawn(service, self.__logfile)
+        self.__execution_queue += self.__scheduler.sorted_services()
+        self.__spawn_next(self.__logfile)
 
         logging.info("SUPERVISOR >> Monitoring processes")
         try:
@@ -120,6 +120,8 @@ class Supervisor:
         service = self.__service(service_name)
         service.set_pid(service_pid)
 
+        self.__spawn_next(self.__logfile)
+
     def __handle_service_returncode(self, service_name, returncode):
         service = self.__service(service_name)
 
@@ -132,6 +134,10 @@ class Supervisor:
         if service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
             self.__restart(service)
 
+    def __spawn_next(self, logfile):
+        if len(self.__execution_queue) > 0:
+            self.__spawn(self.__execution_queue.pop(0), logfile)
+
     def __spawn(self, service, logfile):
         if service.provider() == Provider.DEFAULT:
             process = CommandProcess(service, self.__queue, logfile)
@@ -143,15 +149,6 @@ class Supervisor:
             process = DockerProcess(service, self.__queue, logfile)
 
         process.start()
-
-        message = self.__queue.get(True, None)
-        self.__handle(message)
-        while not self.__is_started(service, message):
-            self.__handle(message);
-            message = self.__queue.get(True, None)
-
-    def __is_started(self, service, message):
-        return 'service_status' in message and message['service_status'] == 'started' and message['service_name'] == service.name()
 
     def __exited(self, service):
         logging.info("SUPERVISOR >> [{0}] exited with [{1}] policy".format(service.name(), service.policy()))
