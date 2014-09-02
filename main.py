@@ -110,8 +110,15 @@ class Supervisor:
     def __handle(self, message):
         logging.info("SUPERVISOR << Received message [{0}]".format(message))
 
+        if 'service_status' in message:
+            self.__handle_service_status(message['service_name'], message['service_status'], message['service_pid'])
+
         if 'service_returncode' in message:
             self.__handle_service_returncode(message['service_name'], message['service_returncode'])
+
+    def __handle_service_status(self, service_name, service_status, service_pid):
+        service = self.__service(service_name)
+        service.set_pid(service_pid)
 
     def __handle_service_returncode(self, service_name, returncode):
         service = self.__service(service_name)
@@ -138,6 +145,7 @@ class Supervisor:
         process.start()
 
         message = self.__queue.get(True, None)
+        self.__handle(message)
         while not self.__is_started(service, message):
             self.__handle(message);
             message = self.__queue.get(True, None)
@@ -155,6 +163,8 @@ class Supervisor:
 
 # # # ABSTRACT PROCESS # # #
 
+import signal
+
 from time import sleep
 
 class AbstractProcess(Process):
@@ -169,9 +179,10 @@ class AbstractProcess(Process):
 
     def run(self):
         process = self._spawn_process()
-        logging.info("{0} >> Spawned [{1}]: PID [{2}] with restart policy [{3}]".format(self.__class__.__name__.upper(), self._service.name(), process.pid, self._service.policy()))
+        logging.info("{0}:{1} >> Spawned [{2}]: PID [{3}] with restart policy [{4}]".format(self.__class__.__name__.upper(), self.pid, self._service.name(), process.pid, self._service.policy()))
         try:
             self._wait_until_started()
+            signal.signal(signal.SIGTERM, self._signal_handler)
             process.wait()
         except KeyboardInterrupt:
             process.poll()
@@ -182,9 +193,12 @@ class AbstractProcess(Process):
             self._queue.put({'service_name' : self._service.name(), 'service_returncode' : process.returncode})
 
     def _wait_until_started(self):
-        while self._has_started() is not True:
+        while not self._has_started():
             sleep(1)
-        self._queue.put({'service_name' : self._service.name(), 'service_status' : 'started'})
+        self._queue.put({'service_name' : self._service.name(), 'service_status' : 'started', 'service_pid' : self.pid})
+
+    def _signal_handler(self, signum, frame):
+        print("SIGNAL RECEIVED")
 
     def _has_started(self):
         return True
@@ -292,6 +306,7 @@ class Service:
         self.__policy = policy
         self.__provider = provider
         self.__params = params
+        self.__pid = None
 
     def name(self):
         return self.__name
@@ -310,6 +325,12 @@ class Service:
 
     def param(self, index):
         return self.__params.get(index, None)
+
+    def pid(self):
+        return self.__pid
+
+    def set_pid(self, pid):
+        self.__pid = pid
 
     def __str__(self):
         return "{0}:{1}".format(self.__name, self.__provider)
