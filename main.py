@@ -118,7 +118,9 @@ class Supervisor:
 
     def __handle_service_status(self, service_name, service_status, service_pid):
         service = self.__service(service_name)
-        service.set_pid(service_pid)
+
+        if service_status == 'started':
+            service.set_pid(service_pid)
 
         self.__spawn_next(self.__logfile)
 
