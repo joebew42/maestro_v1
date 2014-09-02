@@ -177,6 +177,7 @@ class AbstractProcess(Process):
         self._queue = queue
         self._logfile = logfile
         self._process = None
+        self._notify = True
 
     def run(self):
         self._process = self._spawn_process()
@@ -201,7 +202,8 @@ class AbstractProcess(Process):
                 self._process.pid,
                 self._process.returncode))
 
-            self._queue.put({'service_name' : self._service.name(), 'service_returncode' : self._process.returncode})
+            if self._notify:
+                self._queue.put({'service_name' : self._service.name(), 'service_returncode' : self._process.returncode})
 
     def _wait_until_started(self):
         while not self._has_started():
@@ -209,6 +211,7 @@ class AbstractProcess(Process):
         self._queue.put({'service_name' : self._service.name(), 'service_status' : 'started', 'service_pid' : self.pid})
 
     def _signal_handler(self, signum, frame):
+        self._notify = False
         os.kill(self._process.pid, signum)
 
     def _has_started(self):
