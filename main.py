@@ -162,6 +162,7 @@ class Supervisor:
 
 # # # ABSTRACT PROCESS # # #
 
+import os
 import signal
 
 from time import sleep
@@ -175,21 +176,32 @@ class AbstractProcess(Process):
         self._service = service
         self._queue = queue
         self._logfile = logfile
+        self._process = None
 
     def run(self):
-        process = self._spawn_process()
-        logging.info("{0}:{1} >> Spawned [{2}]: PID [{3}] with restart policy [{4}]".format(self.__class__.__name__.upper(), self.pid, self._service.name(), process.pid, self._service.policy()))
+        self._process = self._spawn_process()
+        logging.info("{0}:{1} >> Spawned [{2}]: PID [{3}] with restart policy [{4}]".format(
+            self.__class__.__name__.upper(),
+            self.pid,
+            self._service.name(),
+            self._process.pid,
+            self._service.policy()))
         try:
             self._wait_until_started()
             signal.signal(signal.SIGTERM, self._signal_handler)
-            process.wait()
+            self._process.wait()
         except KeyboardInterrupt:
-            process.poll()
+            self._process.poll()
         finally:
             self._post_exec()
 
-            logging.info("{0} >> [{1}] with PID [{2}] exit with [{3}]".format(self.__class__.__name__.upper(), self._service.name(), process.pid, process.returncode))
-            self._queue.put({'service_name' : self._service.name(), 'service_returncode' : process.returncode})
+            logging.info("{0} >> [{1}] with PID [{2}] exit with [{3}]".format(
+                self.__class__.__name__.upper(),
+                self._service.name(),
+                self._process.pid,
+                self._process.returncode))
+
+            self._queue.put({'service_name' : self._service.name(), 'service_returncode' : self._process.returncode})
 
     def _wait_until_started(self):
         while not self._has_started():
@@ -197,7 +209,7 @@ class AbstractProcess(Process):
         self._queue.put({'service_name' : self._service.name(), 'service_status' : 'started', 'service_pid' : self.pid})
 
     def _signal_handler(self, signum, frame):
-        print("SIGNAL RECEIVED")
+        os.kill(self._process.pid, signum)
 
     def _has_started(self):
         return True
@@ -236,8 +248,6 @@ class DockerfileProcess(AbstractProcess):
         return len(subprocess.check_output(cmd, shell=True)) > 0
 
 # # # DOCKER PROCESS # # #
-
-import os
 
 class DockerProcess(AbstractProcess):
     """

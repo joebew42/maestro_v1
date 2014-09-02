@@ -1,0 +1,33 @@
+[
+  {
+    "name"    : "data",
+    "command" : "while [ 1 ]; do sleep 5; done",
+    "restart" : "always"
+  },
+  {
+    "name"    : "mysql",
+    "command" : "while [ 1 ]; do sleep 5; done",
+    "restart" : "on-error",
+    "requires": [ "data" ]
+  },
+  {
+    "name"    : "redis",
+    "command" : "while [ 1 ]; do sleep 5; done",
+    "restart" : "on-error"
+  },
+  {
+    "name"    : "app",
+    "command" : "while [ 1 ]; do sleep 5; done",
+    "requires": [ "mysql", "redis" ],
+    "restart" : "always"
+  },
+  {
+    "name"    : "nginx",
+    "command" : "while [ 1 ]; do sleep 5; done",
+    "restart" : "always"
+  },
+  {
+    "name"    : "batch",
+    "command" : "while [ 1 ]; do sleep 5; done"
+  }
+]
