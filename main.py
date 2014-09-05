@@ -52,21 +52,23 @@ class DAGScheduler:
     """
 
     def __init__(self):
-        self.__services = nx.DiGraph()
+        self.__services = {}
+        self.__graph = nx.DiGraph()
 
     def add(self, service):
-        self.__services.add_node(service.name(), service=service)
+        self.__services[service.name()] = service
+        self.__graph.add_node(service)
 
     def add_dependency(self, service, required_service):
-        self.__services.add_edge(service.name(), required_service.name())
+        self.__graph.add_edge(service, required_service)
 
     def sorted_services(self):
-        sorted_services = [self.__services.node[name]['service'] for name in nx.topological_sort(self.__services, reverse=True)]
+        sorted_services = nx.topological_sort(self.__graph, reverse=True)
         logging.info("SCHEDULER >> Computed topological sorting of the services is: {}".format(sorted_services))
         return sorted_services
 
-    def __getitem__(self, index):
-        return self.__services.node[index]['service']
+    def __getitem__(self, service_name):
+        return self.__services[service_name]
 
 # # # SUPERVISOR # # #
 
@@ -158,6 +160,7 @@ class Supervisor:
     def __restart(self, service):
         # TODO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
         logging.info("SUPERVISOR >> Trying to restart [{0}]".format(service.name()))
+
         self.__spawn(service, self.__logfile)
 
 # # # ABSTRACT PROCESS # # #
@@ -346,6 +349,9 @@ class Service:
 
     def __str__(self):
         return "{0}:{1}".format(self.__name, self.__provider)
+
+    def __hash__(self):
+        return hash(self.__name)
 
     __repr__ = __str__
 
