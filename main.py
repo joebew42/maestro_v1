@@ -60,10 +60,16 @@ class DAGScheduler:
         self.__graph.add_node(service)
 
     def add_dependency(self, service, required_service):
-        self.__graph.add_edge(service, required_service)
+        self.__graph.add_edge(required_service, service)
 
     def sorted_services(self):
-        sorted_services = nx.topological_sort(self.__graph, reverse=True)
+        return self.__topological_sort(self.__graph)
+
+    def sorted_services_from(self, service):
+        return self.__topological_sort(nx.bfs_tree(self.__graph, service))
+
+    def __topological_sort(self, graph):
+        sorted_services = nx.topological_sort(graph)
         logging.info("SCHEDULER >> Computed topological sorting of the services is: {}".format(sorted_services))
         return sorted_services
 
@@ -71,6 +77,9 @@ class DAGScheduler:
         return self.__services[service_name]
 
 # # # SUPERVISOR # # #
+
+import os
+import signal
 
 from multiprocessing import Process, Queue
 
@@ -159,14 +168,21 @@ class Supervisor:
 
     def __restart(self, service):
         # TODO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
+        services_tree = self.__scheduler.sorted_services_from(service)
+        for service in services_tree[::-1]:
+            self.__sigterm(service)
+
         logging.info("SUPERVISOR >> Trying to restart [{0}]".format(service.name()))
+
+        if len(services_tree) > 1:
+            self.__execution_queue += services_tree[1:]
 
         self.__spawn(service, self.__logfile)
 
-# # # ABSTRACT PROCESS # # #
+    def __sigterm(self, service):
+        os.kill(service.pid(), signal.SIGTERM)
 
-import os
-import signal
+# # # ABSTRACT PROCESS # # #
 
 from time import sleep
 

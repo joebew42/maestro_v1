@@ -7,13 +7,13 @@
   {
     "name"    : "2",
     "command" : "while [ 1 ]; do sleep 5; done",
-    "restart" : "on-error",
+    "restart" : "always",
     "requires": [ "1" ]
   },
   {
     "name"    : "3",
     "command" : "while [ 1 ]; do sleep 5; done",
-    "restart" : "on-error",
+    "restart" : "always",
     "requires": [ "2" ]
   },
   {
@@ -31,6 +31,7 @@
   {
     "name"    : "6",
     "command" : "while [ 1 ]; do sleep 5; done",
+    "restart" : "always",
     "requires": [ "5" ]
   }
 ]
