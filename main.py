@@ -51,6 +51,8 @@ class DAGScheduler:
     This is a scheduler based on a Directed Acyclic Graph
     """
 
+    MAX_DEPTH = 1
+
     def __init__(self):
         self.__services = {}
         self.__graph = nx.DiGraph()
@@ -62,6 +64,12 @@ class DAGScheduler:
     def add_dependency(self, service, required_service):
         self.__graph.add_edge(required_service, service)
 
+        if len(self.__graph.in_edges(service)) > 1:
+            for edge in self.__graph.in_edges(service):
+                if self.__path_exists(edge[0], edge[1], self.MAX_DEPTH):
+                    self.__graph.remove_edge(edge[0], edge[1])
+                    logging.info("SCHEDULER >> {} is already expressed and is not required, removed.".format(edge))
+
     def sorted_services(self):
         return self.__topological_sort(self.__graph)
 
@@ -72,6 +80,16 @@ class DAGScheduler:
         sorted_services = nx.topological_sort(graph)
         logging.info("SCHEDULER >> Computed topological sorting of the services is: {}".format(sorted_services))
         return sorted_services
+
+    def __path_exists(self, source, target, max_depth, depth=0):
+        if source == target and depth > max_depth:
+            return True
+
+        results = []
+        for edge in self.__graph.edges(source):
+            results.append(self.__path_exists(edge[1], target, self.MAX_DEPTH, depth+1))
+
+        return True in results
 
     def __getitem__(self, service_name):
         return self.__services[service_name]
