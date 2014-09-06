@@ -107,7 +107,8 @@ class Supervisor:
         self.__logfile_name = logfile_name
         self.__logfile = None
         self.__queue = Queue()
-        self.__execution_queue = []
+        self.__start_queue = []
+        self.__stop_queue = []
 
     def add(self, service):
         self.__scheduler.add(service)
@@ -120,8 +121,8 @@ class Supervisor:
 
     def start(self):
         self.__logfile = open(self.__logfile_name, "a")
-        self.__execution_queue += self.__scheduler.sorted_services()
-        self.__spawn_next(self.__logfile)
+        self.__start_queue += self.__scheduler.sorted_services()
+        self.__start_next(self.__logfile)
 
         logging.info("SUPERVISOR >> Monitoring processes")
         try:
@@ -148,10 +149,16 @@ class Supervisor:
     def __handle_service_status(self, service_name, service_status, service_pid):
         service = self.__service(service_name)
 
-        if service_status == 'started':
+        if len(self.__stop_queue) == 0 and service_status == 'started':
             service.set_pid(service_pid)
+            self.__start_next(self.__logfile)
 
-        self.__spawn_next(self.__logfile)
+        if service_status == 'stopped':
+            service.set_pid(None)
+            self.__stop_next()
+
+            if len(self.__stop_queue) == 0 and len(self.__start_queue) > 0:
+                self.__start_next(self.__logfile)
 
     def __handle_service_returncode(self, service_name, returncode):
         service = self.__service(service_name)
@@ -165,9 +172,13 @@ class Supervisor:
         if service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
             self.__restart(service)
 
-    def __spawn_next(self, logfile):
-        if len(self.__execution_queue) > 0:
-            self.__spawn(self.__execution_queue.pop(0), logfile)
+    def __start_next(self, logfile):
+        if len(self.__start_queue) > 0:
+            self.__spawn(self.__start_queue.pop(0), logfile)
+
+    def __stop_next(self):
+        if len(self.__stop_queue) > 0:
+            self.__stop(self.__stop_queue.pop(0))
 
     def __spawn(self, service, logfile):
         if service.provider() == Provider.DEFAULT:
@@ -181,25 +192,22 @@ class Supervisor:
 
         process.start()
 
+    def __stop(self, service):
+        if service.pid() is not None:
+            logging.info("SUPERVISOR >> Sending SIGTERM to [{0}]".format(service))
+            os.kill(service.pid(), signal.SIGTERM)
+
     def __exited(self, service):
         logging.info("SUPERVISOR >> [{0}] exited with [{1}] policy".format(service.name(), service.policy()))
 
     def __restart(self, service):
         # INFO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
         services_tree = self.__scheduler.sorted_services_from(service)
-        for service in services_tree[::-1]:
-            self.__sigterm(service)
+        self.__stop_queue += services_tree[::-1]
+        self.__stop_next()
 
-        logging.info("SUPERVISOR >> Trying to restart [{0}]".format(service.name()))
-
-        if len(services_tree) > 1:
-            self.__execution_queue += services_tree[1:]
-
-        self.__spawn(service, self.__logfile)
-
-    def __sigterm(self, service):
-        logging.info("SUPERVISOR >> Sending SIGTERM to [{0}]".format(service))
-        os.kill(service.pid(), signal.SIGTERM)
+        self.__start_queue += services_tree
+        self.__start_next(self.__logfile)
 
 # # # ABSTRACT PROCESS # # #
 
@@ -226,13 +234,14 @@ class AbstractProcess(Process):
             self._process.pid,
             self._service.policy()))
         try:
-            self._wait_until_started()
             signal.signal(signal.SIGTERM, self._signal_handler)
+            self._wait_until_started()
             self._process.wait()
         except KeyboardInterrupt:
             self._process.poll()
         finally:
             self._post_exec()
+            self._wait_until_stopped()
 
             logging.info("{0} >> [{1}] with PID [{2}] exit with [{3}]".format(
                 self.__class__.__name__.upper(),
@@ -248,12 +257,20 @@ class AbstractProcess(Process):
             sleep(1)
         self._queue.put({'service_name' : self._service.name(), 'service_status' : 'started', 'service_pid' : self.pid})
 
-    def _signal_handler(self, signum, frame):
-        self._notify = False
-        os.kill(self._process.pid, signum)
+    def _wait_until_stopped(self):
+        while not self._has_stopped():
+            sleep(1)
+        self._queue.put({'service_name' : self._service.name(), 'service_status' : 'stopped', 'service_pid' : None})
 
     def _has_started(self):
         return True
+
+    def _has_stopped(self):
+        return True
+
+    def _signal_handler(self, signum, frame):
+        self._notify = False
+        os.kill(self._process.pid, signum)
 
     def _spawn_process(self):
         pass
@@ -332,6 +349,9 @@ class DockerProcess(AbstractProcess):
 
     def _has_started(self):
         return os.path.exists(self.__cid_file_path)
+
+    def _has_stopped(self):
+        return not os.path.exists(self.__cid_file_path)
 
 # # # RESTART POLICIES # # #
 

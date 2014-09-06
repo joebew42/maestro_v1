@@ -8,13 +8,28 @@
     }
   },
   {
-    "name"    : "nginx",
+    "name"    : "heart",
+    "command" : "while [ 1 ]; do sleep 5; done",
+    "restart" : "always"
+  },
+  {
+    "name"    : "nginx1",
     "restart" : "always",
-    "requires": [ "nginx-setup" ],
+    "requires": [ "nginx-setup", "heart" ],
     "provider": "docker",
     "params"  : {
       "image"   : "ubuntu-14.04-nginx",
       "port"  : [ "65432:80" ]
+    }
+  },
+    {
+    "name"    : "nginx2",
+    "restart" : "always",
+    "requires": [ "nginx-setup", "heart" ],
+    "provider": "docker",
+    "params"  : {
+      "image"   : "ubuntu-14.04-nginx",
+      "port"  : [ "65433:80" ]
     }
   }
 ]
