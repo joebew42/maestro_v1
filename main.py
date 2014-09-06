@@ -185,7 +185,7 @@ class Supervisor:
         logging.info("SUPERVISOR >> [{0}] exited with [{1}] policy".format(service.name(), service.policy()))
 
     def __restart(self, service):
-        # TODO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
+        # INFO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
         services_tree = self.__scheduler.sorted_services_from(service)
         for service in services_tree[::-1]:
             self.__sigterm(service)
@@ -198,6 +198,7 @@ class Supervisor:
         self.__spawn(service, self.__logfile)
 
     def __sigterm(self, service):
+        logging.info("SUPERVISOR >> Sending SIGTERM to [{0}]".format(service))
         os.kill(service.pid(), signal.SIGTERM)
 
 # # # ABSTRACT PROCESS # # #
