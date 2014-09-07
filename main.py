@@ -46,16 +46,21 @@ class JSONParser:
 
 import networkx as nx
 
-class DAGScheduler:
+class Scheduler:
+    START = 1
+    STOP  = 0
+
+class DAGScheduler(Scheduler):
     """
     This is a scheduler based on a Directed Acyclic Graph
     """
-
     MAX_DEPTH = 1
 
     def __init__(self):
         self.__services = {}
         self.__graph = nx.DiGraph()
+        self.__start_queue = []
+        self.__stop_queue = []
 
     def add(self, service):
         self.__services[service.name()] = service
@@ -70,10 +75,27 @@ class DAGScheduler:
                     self.__graph.remove_edge(edge[0], edge[1])
                     logging.info("SCHEDULER >> {} is already expressed and is not required, removed.".format(edge))
 
-    def sorted_services(self):
+    def init(self):
+        self.__start_queue += self.__sorted_services()
+
+    def init_from(self, service):
+        _services = self.__sorted_services_from(service)
+        self.__stop_queue += _services[1:][::-1]
+        self.__start_queue += _services
+
+    def pop(self):
+        if len(self.__stop_queue) > 0:
+            return self.STOP, self.__stop_queue.pop(0)
+
+        if len(self.__start_queue) > 0:
+            return self.START, self.__start_queue.pop(0)
+
+        return None, None
+
+    def __sorted_services(self):
         return self.__topological_sort(self.__graph)
 
-    def sorted_services_from(self, service):
+    def __sorted_services_from(self, service):
         return self.__topological_sort(nx.bfs_tree(self.__graph, service))
 
     def __topological_sort(self, graph):
@@ -107,10 +129,6 @@ class Supervisor:
         self.__logfile_name = logfile_name
         self.__logfile = None
         self.__queue = Queue()
-        # TODO start and stop queue should be
-        #      handled by scheduler
-        self.__start_queue = []
-        self.__stop_queue = []
 
     def add(self, service):
         self.__scheduler.add(service)
@@ -122,11 +140,12 @@ class Supervisor:
         return self.__scheduler[name]
 
     def start(self):
-        self.__logfile = open(self.__logfile_name, "a")
-        self.__start_queue += self.__scheduler.sorted_services()
-        self.__start_next(self.__logfile)
+        logging.info("SUPERVISOR >> Start")
 
-        logging.info("SUPERVISOR >> Monitoring processes")
+        self.__logfile = open(self.__logfile_name, "a")
+        self.__scheduler.init()
+        self.__process_next()
+
         try:
             self.__run()
         except KeyboardInterrupt:
@@ -136,8 +155,8 @@ class Supervisor:
 
     def __run(self):
         while True:
-            message = self.__queue.get(True, None)
-            self.__handle(message)
+            _message = self.__queue.get(True, None)
+            self.__handle(_message)
 
     def __handle(self, message):
         logging.info("SUPERVISOR << Received message [{0}]".format(message))
@@ -149,18 +168,15 @@ class Supervisor:
             self.__handle_service_returncode(message['service_name'], message['service_returncode'])
 
     def __handle_service_status(self, service_name, service_status, service_pid):
-        service = self.__service(service_name)
+        _service = self.__service(service_name)
 
-        if service_status == 'started' and len(self.__stop_queue) == 0:
-            service.set_pid(service_pid)
-            self.__start_next(self.__logfile)
+        if service_status == 'started':
+            _service.set_pid(service_pid)
 
         if service_status == 'stopped':
-            service.set_pid(None)
-            self.__stop_next()
+            _service.set_pid(None)
 
-            if len(self.__stop_queue) == 0 and len(self.__start_queue) > 0:
-                self.__start_next(self.__logfile)
+        self.__process_next()
 
     def __handle_service_returncode(self, service_name, returncode):
         service = self.__service(service_name)
@@ -174,15 +190,16 @@ class Supervisor:
         if service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
             self.__restart(service)
 
-    def __start_next(self, logfile):
-        if len(self.__start_queue) > 0:
-            self.__spawn(self.__start_queue.pop(0), logfile)
+    def __process_next(self):
+        _action, _service = self.__scheduler.pop()
 
-    def __stop_next(self):
-        if len(self.__stop_queue) > 0:
-            self.__stop(self.__stop_queue.pop(0))
+        if _action == Scheduler.START:
+            self.__start(_service, self.__logfile)
 
-    def __spawn(self, service, logfile):
+        if _action == Scheduler.STOP:
+            self.__stop(_service)
+
+    def __start(self, service, logfile):
         if service.provider() == Provider.DEFAULT:
             process = CommandProcess(service, self.__queue, logfile)
 
@@ -199,15 +216,12 @@ class Supervisor:
             logging.info("SUPERVISOR >> Sending SIGTERM to [{0}]".format(service))
             os.kill(service.pid(), signal.SIGTERM)
 
+    def __restart(self, service):
+        self.__scheduler.init_from(service)
+        self.__process_next()
+
     def __exited(self, service):
         logging.info("SUPERVISOR >> [{0}] exited with [{1}] policy".format(service.name(), service.policy()))
-
-    def __restart(self, service):
-        # INFO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
-        services_tree = self.__scheduler.sorted_services_from(service)
-        self.__stop_queue += services_tree[::-1]
-        self.__start_queue += services_tree
-        self.__stop_next()
 
 # # # ABSTRACT PROCESS # # #
 
@@ -363,9 +377,9 @@ class RestartPolicy:
 # # # PROVIDERS # # #
 
 class Provider:
-    DEFAULT = "command"
+    DEFAULT    = "command"
     DOCKERFILE = "dockerfile"
-    DOCKER  = "docker"
+    DOCKER     = "docker"
 
 # # # SERVICE # # #
 
