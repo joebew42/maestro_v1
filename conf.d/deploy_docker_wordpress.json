@@ -4,20 +4,7 @@
     "restart" : "always",
     "provider": "docker",
     "params"  : {
-      "image"   : "busybox:ubuntu-14.04",
-      "command" : "while [ true ]; do echo \"hello\"; sleep 5; done",
-      "expose"  : [ 3306 ]
-    }
-  },
-  {
-    "name"    : "wordpress",
-    "restart" : "always",
-    "requires": [ "mysql" ],
-    "provider": "docker",
-    "params"  : {
-      "image"   : "busybox:ubuntu-14.04",
-      "command" : "sleep 10",
-      "link"    : [ "mysql:ms" ]
+      "image"  : "tutum/mysql:5.5"
     }
   }
 ]

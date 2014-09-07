@@ -315,8 +315,15 @@ class DockerfileProcess(AbstractProcess):
         return subprocess.Popen(dockerfile_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
 
     def _has_started(self):
-        cmd = "docker images | grep \"{0}\" | awk '{{print $3}}'".format(self._service.param('image'))
-        return len(subprocess.check_output(cmd, shell=True)) > 0
+        _image = self._service.param('image').split(':')
+        if len(_image) == 1:
+            _image.append('latest')
+
+        cmd = "docker images | awk '{{print $1$2}}' | grep \"{0}{1}\"".format(_image[0], _image[1])
+        try:
+            return len(subprocess.check_output(cmd, shell=True)) > 0
+        except:
+            return False
 
 # # # DOCKER PROCESS # # #
 
@@ -361,7 +368,15 @@ class DockerProcess(AbstractProcess):
         os.remove(self.__cid_file_path)
 
     def _has_started(self):
-        return os.path.exists(self.__cid_file_path)
+        _image = self._service.param('image').split(':')
+        if len(_image) == 1:
+            _image.append('latest')
+
+        cmd = "docker images | awk '{{print $1$2}}' | grep \"{0}{1}\"".format(_image[0], _image[1])
+        try:
+            return len(subprocess.check_output(cmd, shell=True)) > 0 and os.path.exists(self.__cid_file_path)
+        except:
+            return False
 
     def _has_stopped(self):
         return not os.path.exists(self.__cid_file_path)
