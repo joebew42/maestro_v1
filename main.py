@@ -107,6 +107,8 @@ class Supervisor:
         self.__logfile_name = logfile_name
         self.__logfile = None
         self.__queue = Queue()
+        # TODO start and stop queue should be
+        #      handled by scheduler
         self.__start_queue = []
         self.__stop_queue = []
 
@@ -149,7 +151,7 @@ class Supervisor:
     def __handle_service_status(self, service_name, service_status, service_pid):
         service = self.__service(service_name)
 
-        if len(self.__stop_queue) == 0 and service_status == 'started':
+        if service_status == 'started' and len(self.__stop_queue) == 0:
             service.set_pid(service_pid)
             self.__start_next(self.__logfile)
 
@@ -204,10 +206,8 @@ class Supervisor:
         # INFO Restart Strategy http://www.erlang.org/doc/design_principles/sup_princ.html
         services_tree = self.__scheduler.sorted_services_from(service)
         self.__stop_queue += services_tree[::-1]
-        self.__stop_next()
-
         self.__start_queue += services_tree
-        self.__start_next(self.__logfile)
+        self.__stop_next()
 
 # # # ABSTRACT PROCESS # # #
 
