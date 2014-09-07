@@ -167,6 +167,8 @@ class Supervisor:
         if 'service_returncode' in message:
             self.__handle_service_returncode(message['service_name'], message['service_returncode'])
 
+        self.__process_next()
+
     def __handle_service_status(self, service_name, service_status, service_pid):
         _service = self.__service(service_name)
 
@@ -175,8 +177,6 @@ class Supervisor:
 
         if service_status == 'stopped':
             _service.set_pid(None)
-
-        self.__process_next()
 
     def __handle_service_returncode(self, service_name, returncode):
         service = self.__service(service_name)
@@ -218,7 +218,6 @@ class Supervisor:
 
     def __restart(self, service):
         self.__scheduler.init_from(service)
-        self.__process_next()
 
     def __exited(self, service):
         logging.info("SUPERVISOR >> [{0}] exited with [{1}] policy".format(service.name(), service.policy()))
