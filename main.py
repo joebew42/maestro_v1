@@ -8,7 +8,7 @@ import json
 
 class JSONParser:
     """
-    It's read a JSON text and returns services and dependencies
+    It reads a JSON text and returns services and dependencies
     """
 
     def __init__(self, json_text):
