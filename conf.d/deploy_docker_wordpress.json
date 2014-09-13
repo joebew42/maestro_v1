@@ -4,7 +4,9 @@
     "restart" : "always",
     "provider": "docker",
     "params"  : {
-      "image"  : "tutum/mysql:5.5"
+      "image"  : "tutum/mysql:5.5",
+      "env"    : [ "MYSQL_PASS=admin" ],
+      "expose" : [ "3306" ]
     }
   }
 ]

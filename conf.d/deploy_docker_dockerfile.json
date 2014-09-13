@@ -22,7 +22,7 @@
       "port"  : [ "65432:80" ]
     }
   },
-    {
+  {
     "name"    : "nginx2",
     "restart" : "always",
     "requires": [ "nginx-setup", "heart" ],
