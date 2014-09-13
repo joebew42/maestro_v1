@@ -249,7 +249,8 @@ class AbstractProcess(Process):
         try:
             signal.signal(signal.SIGTERM, self._signal_handler)
             self._wait_until_started()
-            self._process.wait()
+            while self._is_running():
+                sleep(0.5)
         except KeyboardInterrupt:
             self._process.poll()
         finally:
@@ -274,6 +275,12 @@ class AbstractProcess(Process):
         while not self._has_stopped():
             sleep(1)
         self._queue.put({'service_name' : self._service.name(), 'service_status' : 'stopped', 'service_pid' : None})
+
+    def _is_running(self):
+        self._process.poll()
+        if self._process.returncode is None:
+            return True
+        return False
 
     def _has_started(self):
         return True
