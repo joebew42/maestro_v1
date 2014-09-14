@@ -1,23 +1,23 @@
 [
   {
     "name"    : "data",
-    "command" : "sleep 60; exit 0",
+    "command" : "sleep 30; exit 0",
     "restart" : "always"
   },
   {
     "name"    : "mysql",
-    "command" : "sleep 50; exit 1",
+    "command" : "sleep 25; exit 1",
     "restart" : "on-error",
     "requires": [ "data" ]
   },
   {
     "name"    : "redis",
-    "command" : "sleep 40; exit 1",
+    "command" : "sleep 20; exit 1",
     "restart" : "on-error"
   },
   {
     "name"    : "app",
-    "command" : "sleep 30; exit 22",
+    "command" : "sleep 15; exit 22",
     "requires": [ "mysql", "redis" ],
     "restart" : "always"
   },
@@ -28,6 +28,6 @@
   },
   {
     "name"    : "batch",
-    "command" : "sleep 10; exit 0"
+    "command" : "sleep 5; exit 0"
   }
 ]

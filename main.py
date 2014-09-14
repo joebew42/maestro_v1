@@ -54,8 +54,7 @@ class ProcessQueue:
 
     def put(self, item):
         with self.__lock:
-            if item not in self.__list:
-                self.__list.append(item)
+            self.__list.append(item)
 
     def get(self):
         with self.__lock:
@@ -231,16 +230,20 @@ class Supervisor:
             self.__stop(_service)
 
     def __start(self, service, logfile):
-        if service.provider() == Provider.DEFAULT:
-            process = CommandProcess(service, self.__queue, logfile)
+        if service.pid() is not None:
+            logging.info("SUPERVISOR >> [{0}] is already running".format(service))
+            self.__queue.put({'service_name' : service.name(), 'service_status' : 'started', 'service_pid' : service.pid()})
+        else:
+            if service.provider() == Provider.DEFAULT:
+                process = CommandProcess(service, self.__queue, logfile)
 
-        if service.provider() == Provider.DOCKERFILE:
-            process = DockerfileProcess(service, self.__queue, logfile)
+            if service.provider() == Provider.DOCKERFILE:
+                process = DockerfileProcess(service, self.__queue, logfile)
 
-        if service.provider() == Provider.DOCKER:
-            process = DockerProcess(service, self.__queue, logfile)
+            if service.provider() == Provider.DOCKER:
+                process = DockerProcess(service, self.__queue, logfile)
 
-        process.start()
+            process.start()
 
     def __stop(self, service):
         if service.pid() is not None:
