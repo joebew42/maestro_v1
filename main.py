@@ -42,6 +42,32 @@ class JSONParser:
     def dependencies(self):
         return self.__dependencies
 
+# # # PROCESS QUEUE # # #
+
+from threading import Lock
+
+class ProcessQueue:
+
+    def __init__(self):
+        self.__lock = Lock()
+        self.__list = []
+
+    def put(self, item):
+        with self.__lock:
+            if item not in self.__list:
+                self.__list.append(item)
+
+    def get(self):
+        with self.__lock:
+            item = self.__list.pop(0)
+        return item
+
+    def empty(self):
+        _is_empty = True
+        with self.__lock:
+            _is_empty = not len(self.__list) > 0
+        return _is_empty
+
 # # # SCHEDULER # # #
 
 import networkx as nx
@@ -59,8 +85,8 @@ class DAGScheduler(Scheduler):
     def __init__(self):
         self.__services = {}
         self.__graph = nx.DiGraph()
-        self.__start_queue = []
-        self.__stop_queue = []
+        self.__start_queue = ProcessQueue()
+        self.__stop_queue = ProcessQueue()
 
     def add(self, service):
         self.__services[service.name()] = service
@@ -76,19 +102,24 @@ class DAGScheduler(Scheduler):
                     logging.info("SCHEDULER >> {} is already expressed and is not required, removed.".format(edge))
 
     def init(self):
-        self.__start_queue += self.__sorted_services()
+        for service in self.__sorted_services():
+            self.__start_queue.put(service)
 
     def init_from(self, service):
         _services = self.__sorted_services_from(service)
-        self.__stop_queue += _services[1:][::-1]
-        self.__start_queue += _services
+
+        for service in _services[1:][::-1]:
+            self.__stop_queue.put(service)
+
+        for service in _services:
+            self.__start_queue.put(service)
 
     def pop(self):
-        if len(self.__stop_queue) > 0:
-            return self.STOP, self.__stop_queue.pop(0)
+        if not self.__stop_queue.empty():
+            return self.STOP, self.__stop_queue.get()
 
-        if len(self.__start_queue) > 0:
-            return self.START, self.__start_queue.pop(0)
+        if not self.__start_queue.empty():
+            return self.START, self.__start_queue.get()
 
         return None, None
 
