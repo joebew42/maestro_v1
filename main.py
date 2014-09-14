@@ -42,31 +42,6 @@ class JSONParser:
     def dependencies(self):
         return self.__dependencies
 
-# # # PROCESS QUEUE # # #
-
-from threading import Lock
-
-class ProcessQueue:
-
-    def __init__(self):
-        self.__lock = Lock()
-        self.__list = []
-
-    def put(self, item):
-        with self.__lock:
-            self.__list.append(item)
-
-    def get(self):
-        with self.__lock:
-            item = self.__list.pop(0)
-        return item
-
-    def empty(self):
-        _is_empty = True
-        with self.__lock:
-            _is_empty = not len(self.__list) > 0
-        return _is_empty
-
 # # # SCHEDULER # # #
 
 import networkx as nx
@@ -84,8 +59,8 @@ class DAGScheduler(Scheduler):
     def __init__(self):
         self.__services = {}
         self.__graph = nx.DiGraph()
-        self.__start_queue = ProcessQueue()
-        self.__stop_queue = ProcessQueue()
+        self.__start_queue = []
+        self.__stop_queue = []
 
     def add(self, service):
         self.__services[service.name()] = service
@@ -101,24 +76,20 @@ class DAGScheduler(Scheduler):
                     logging.info("SCHEDULER >> {} is already expressed and is not required, removed.".format(edge))
 
     def init(self):
-        for service in self.__sorted_services():
-            self.__start_queue.put(service)
+        self.__start_queue += self.__sorted_services()
 
     def init_from(self, service):
         _services = self.__sorted_services_from(service)
 
-        for service in _services[1:][::-1]:
-            self.__stop_queue.put(service)
-
-        for service in _services:
-            self.__start_queue.put(service)
+        self.__stop_queue += _services[1:][::-1]
+        self.__start_queue += _services
 
     def pop(self):
-        if not self.__stop_queue.empty():
-            return self.STOP, self.__stop_queue.get()
+        if len(self.__stop_queue) > 0:
+            return self.STOP, self.__stop_queue.pop(0)
 
-        if not self.__start_queue.empty():
-            return self.START, self.__start_queue.get()
+        if len(self.__start_queue) > 0:
+            return self.START, self.__start_queue.pop(0)
 
         return None, None
 
@@ -197,8 +168,6 @@ class Supervisor:
         if 'service_returncode' in message:
             self.__handle_service_returncode(message['service_name'], message['service_returncode'])
 
-        self.__process_next()
-
     def __handle_service_status(self, service_name, service_status, service_pid):
         _service = self.__service(service_name)
 
@@ -207,6 +176,8 @@ class Supervisor:
 
         if service_status == 'stopped':
             _service.set_pid(None)
+
+        self.__process_next()
 
     def __handle_service_returncode(self, service_name, returncode):
         service = self.__service(service_name)
@@ -230,20 +201,16 @@ class Supervisor:
             self.__stop(_service)
 
     def __start(self, service, logfile):
-        if service.pid() is not None:
-            logging.info("SUPERVISOR >> [{0}] is already running".format(service))
-            self.__queue.put({'service_name' : service.name(), 'service_status' : 'started', 'service_pid' : service.pid()})
-        else:
-            if service.provider() == Provider.DEFAULT:
-                process = CommandProcess(service, self.__queue, logfile)
+        if service.provider() == Provider.DEFAULT:
+            process = CommandProcess(service, self.__queue, logfile)
 
-            if service.provider() == Provider.DOCKERFILE:
-                process = DockerfileProcess(service, self.__queue, logfile)
+        if service.provider() == Provider.DOCKERFILE:
+            process = DockerfileProcess(service, self.__queue, logfile)
 
-            if service.provider() == Provider.DOCKER:
-                process = DockerProcess(service, self.__queue, logfile)
+        if service.provider() == Provider.DOCKER:
+            process = DockerProcess(service, self.__queue, logfile)
 
-            process.start()
+        process.start()
 
     def __stop(self, service):
         if service.pid() is not None:
@@ -252,6 +219,7 @@ class Supervisor:
 
     def __restart(self, service):
         self.__scheduler.init_from(service)
+        self.__process_next()
 
     def __exited(self, service):
         logging.info("SUPERVISOR >> [{0}] exited with [{1}] policy".format(service.name(), service.policy()))
