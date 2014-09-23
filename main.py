@@ -42,15 +42,33 @@ class JSONParser:
     def dependencies(self):
         return self.__dependencies
 
+# # # SCHEDULER TASK # # #
+
+class SchedulerTask:
+    START = 1
+    STOP = 0
+
+    def __init__(self, start_queue, stop_queue):
+        self.__start_queue = start_queue
+        self.__stop_queue = stop_queue
+
+    def pop(self):
+        if len(self.__stop_queue) > 0:
+            return self.STOP, self.__stop_queue.pop(0)
+
+        if len(self.__start_queue) > 0:
+            return self.START, self.__start_queue.pop(0)
+
+        return None, None
+
+    def is_empty(self):
+        return len(self.__start_queue) == 0
+
 # # # SCHEDULER # # #
 
 import networkx as nx
 
-class Scheduler:
-    START = 1
-    STOP  = 0
-
-class DAGScheduler(Scheduler):
+class DAGScheduler:
     """
     This is a scheduler based on a Directed Acyclic Graph
     """
@@ -59,8 +77,8 @@ class DAGScheduler(Scheduler):
     def __init__(self):
         self.__services = {}
         self.__graph = nx.DiGraph()
-        self.__start_queue = []
-        self.__stop_queue = []
+        self.__tasks = []
+        self.__current_task = None
 
     def add(self, service):
         self.__services[service.name()] = service
@@ -76,22 +94,22 @@ class DAGScheduler(Scheduler):
                     logging.info("SCHEDULER >> {} is already expressed and is not required, removed.".format(edge))
 
     def init(self):
-        self.__start_queue += self.__sorted_services()
+        self.__add_task(self.__sorted_services())
+        self.__current_task = self.__tasks.pop(0)
 
     def init_from(self, service):
         _services = self.__sorted_services_from(service)
 
-        self.__stop_queue += _services[1:][::-1]
-        self.__start_queue += _services
+        self.__add_task(_services, _services[1:][::-1])
+
+    def __add_task(self, start_queue, stop_queue=[]):
+        self.__tasks.append(SchedulerTask(start_queue, stop_queue))
 
     def pop(self):
-        if len(self.__stop_queue) > 0:
-            return self.STOP, self.__stop_queue.pop(0)
+        if self.__current_task.is_empty() and len(self.__tasks) > 0:
+            self.__current_task = self.__tasks.pop(0)
 
-        if len(self.__start_queue) > 0:
-            return self.START, self.__start_queue.pop(0)
-
-        return None, None
+        return self.__current_task.pop()
 
     def __sorted_services(self):
         return self.__topological_sort(self.__graph)
@@ -179,8 +197,6 @@ class Supervisor:
         if service_status == 'stopped':
             _service.stopped()
 
-        self.__process_next()
-
     def __handle_service_returncode(self, service_name, returncode):
         service = self.__service(service_name)
 
@@ -196,10 +212,10 @@ class Supervisor:
     def __process_next(self):
         _action, _service = self.__scheduler.pop()
 
-        if _action == Scheduler.START:
+        if _action == SchedulerTask.START:
             self.__start(_service, self.__logfile)
 
-        if _action == Scheduler.STOP:
+        if _action == SchedulerTask.STOP:
             self.__stop(_service)
 
     def __start(self, service, logfile):
