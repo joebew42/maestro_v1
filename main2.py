@@ -57,19 +57,20 @@ from queue import Queue
 from threading import Thread
 
 class OSProcess(Thread):
-    def __init__(self, service, queue, monitor_queue):
+    def __init__(self, service, request_queue, result_queue):
         super().__init__()
         self.__service = service
-        self.__queue = queue
-        self.__monitor_queue = monitor_queue
+        self.__request_queue = request_queue
+        self.__result_queue = result_queue
+        # TODO add handlers for START and STOP
 
     def run(self):
         logging.info("{}:{} >> Ready".format(self.__class__.__name__, self.__service))
 
         while True:
-            _message = self.__queue.get()
+            _message = self.__request_queue.get()
             self.__handle(_message)
-            self.__queue.task_done()
+            self.__request_queue.task_done()
 
         self.__shutdown()
 
@@ -79,6 +80,7 @@ class OSProcess(Thread):
     def __handle(self, message):
         logging.info("{}:{} << RECEIVED: [{}]".format(self.__class__.__name__, self.__service, message))
         sleep(2)
+        self.__result_queue.put("SOMETHING DONE: {}".format(message))
 
 
 # # # MONITOR MESSAGE # # #
@@ -100,12 +102,11 @@ class Monitor(Thread):
             MonitorMessage.RESTART : self.__restart,
             MonitorMessage.ADD_QUEUE : self.__add_queue,
         }
-        self.__process_queue = Queue()
+        self.__process_started = False
+        self.__process_req_queue = Queue()
+        self.__process_res_queue = Queue()
 
     def run(self):
-        _process = OSProcess(self.__service, self.__process_queue, self.__inbound_queue)
-        _process.start()
-
         logging.info("{}:{} >> Ready".format(self.__class__.__name__, self.__service))
 
         while True:
@@ -123,9 +124,22 @@ class Monitor(Thread):
 
     def __restart(self, message):
         logging.info("{}:{} << Received RESTART message".format(self.__class__.__name__, self.__service))
-        self.__process_queue.put(OSProcessMessage.STOP)
-        self.__process_queue.put(OSProcessMessage.START)
-        self.__process_queue.join()
+        if self.__process_started:
+            self.__process_req_queue.put(OSProcessMessage.STOP)
+            self.__process_req_queue.join()
+
+            _process_message = self.__process_res_queue.get()
+            print(_process_message)
+
+        _process = OSProcess(self.__service, self.__process_req_queue, self.__process_res_queue)
+        _process.start()
+
+        self.__process_req_queue.put(OSProcessMessage.START)
+        self.__process_req_queue.join()
+
+        _process_message = self.__process_res_queue.get()
+        print(_process_message)
+
         self.__notify((MonitorMessage.RESTART,))
 
     def __add_queue(self, message):
