@@ -43,17 +43,52 @@ class JSONParser:
         return self.__dependencies
 
 
-# # # MONITOR MESSAGE # # #
+# # # OS PROCESS MESSAGE # # #
 
-class MonitorMessage:
-    RESTART = 0
-    ADD_QUEUE = 1
+class OSProcessMessage:
+    START = "start"
+    STOP = "stop"
 
-# # # MONITOR # # #
+
+# # # OS PROCESS # # #
 
 from time import sleep
 from queue import Queue
 from threading import Thread
+
+class OSProcess(Thread):
+    def __init__(self, service, queue, monitor_queue):
+        super().__init__()
+        self.__service = service
+        self.__queue = queue
+        self.__monitor_queue = monitor_queue
+
+    def run(self):
+        logging.info("{}:{} >> Ready".format(self.__class__.__name__, self.__service))
+
+        while True:
+            _message = self.__queue.get()
+            self.__handle(_message)
+            self.__queue.task_done()
+
+        self.__shutdown()
+
+    def __shutdown(self):
+        logging.info("{}:{} >> Shutting down".format(self.__class__.__name__, self.__service))
+
+    def __handle(self, message):
+        logging.info("{}:{} << RECEIVED: [{}]".format(self.__class__.__name__, self.__service, message))
+        sleep(2)
+
+
+# # # MONITOR MESSAGE # # #
+
+class MonitorMessage:
+    RESTART = "restart"
+    ADD_QUEUE = "add_queue"
+
+
+# # # MONITOR # # #
 
 class Monitor(Thread):
     def __init__(self, service, queue):
@@ -65,35 +100,38 @@ class Monitor(Thread):
             MonitorMessage.RESTART : self.__restart,
             MonitorMessage.ADD_QUEUE : self.__add_queue,
         }
+        self.__process_queue = Queue()
 
     def run(self):
+        _process = OSProcess(self.__service, self.__process_queue, self.__inbound_queue)
+        _process.start()
+
         logging.info("{}:{} >> Ready".format(self.__class__.__name__, self.__service))
 
         while True:
-            message = self.__inbound_queue.get()
-            self.__handlers.get(message[0], self.__null_handler)(message[1:])
+            _message = self.__inbound_queue.get()
+            self.__handlers.get(_message[0])(_message[1:])
             self.__inbound_queue.task_done()
 
+        self.__shutdown()
+
+    def __shutdown(self):
         logging.info("{}:{} >> Shutting down".format(self.__class__.__name__, self.__service))
 
     def inbound_queue(self):
         return self.__inbound_queue
 
-    def send(self, message):
-        self.__inbound_queue.put(message)
-
     def __restart(self, message):
         logging.info("{}:{} << Received RESTART message".format(self.__class__.__name__, self.__service))
-        sleep(5)
+        self.__process_queue.put(OSProcessMessage.STOP)
+        self.__process_queue.put(OSProcessMessage.START)
+        self.__process_queue.join()
         self.__notify((MonitorMessage.RESTART,))
 
     def __add_queue(self, message):
         _service_name, _queue = message
         self.__outbound_queues.append(_queue)
         logging.info("{}:{} >> Registered to publish over [{}]".format(self.__class__.__name__, self.__service, _service_name))
-
-    def __null_handler(self, message):
-        logging.info("{}:{} << Received NULL message: {}".format(self.__class__.__name__, self.__service, message))
 
     def __notify(self, message):
         for queue in self.__outbound_queues:
