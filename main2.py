@@ -152,7 +152,7 @@ class OSProcessThread(Thread):
             OSProcessThreadMessage.STOP : self.__stop,
             OSProcessThreadMessage.RESTART : self.__restart,
         }
-        self.__osprocess_monitor_thread = None
+        self.__osprocess_monitor_thread = Thread()
 
     def run(self):
         while True:
@@ -184,8 +184,6 @@ class OSProcessThread(Thread):
     def __restart(self):
         logging.info("{}:{} << Received: [{}]".format(self.__class__.__name__, self.__service, OSProcessThreadMessage.RESTART))
 
-        self.__osprocess_monitor_thread = None
-
         self.__service_request_queue.put((ServiceThreadMessage.RESTART,))
 
     def __start_osprocess_monitor_thread(self):
@@ -200,7 +198,7 @@ class OSProcessThread(Thread):
         ))
 
     def __stop_osprocess_monitor_thread(self):
-        if self.__osprocess_monitor_thread is not None:
+        if self.__osprocess_monitor_thread.is_alive():
             self.__osprocess_monitor_thread.kill()
 
             logging.info("{}:{} >> Response from [{}]: {}".format(
