@@ -43,24 +43,96 @@ class JSONParser:
         return self.__dependencies
 
 
+# # # OS PROCESS MONITOR THREAD MESSAGE # # #
+
+class OSProcessMonitorThreadMessage:
+    STARTED = "STARTED"
+    STOPPED = "STOPPED"
+
 # # # OS PROCESS MONITOR THREAD # # #
 
 from queue import Queue
 from threading import Thread
+from subprocess import Popen
+from time import sleep
+from os import kill
 
 class OSProcessMonitorThread(Thread):
-    pass
+    def __init__(self, service, osprocess_request_queue):
+        super().__init__()
+        self._service = service
+        self._osprocess_request_queue = osprocess_request_queue
+        self._response_queue = Queue()
+        self._process = None
+        self._safe_kill = False
+
+    def run(self):
+        self._process = self._spawn_process()
+        logging.info("{}:{} >> Spawned [{}] with restart policy [{}]".format(
+            self.__class__.__name__,
+            self._service,
+            self._process.pid,
+            self._service.policy()))
+
+        try:
+            self._wait_until_started()
+            self._process.wait()
+        except KeyboardInterrupt:
+            self._process.poll()
+        finally:
+            self._post_exec()
+            self._wait_until_stopped()
+
+            logging.info("{}:{} >> PID [{}] has exited with [{}]".format(
+                self.__class__.__name__,
+                self._service,
+                self._process.pid,
+                self._process.returncode))
+
+    def kill(self):
+        self._safe_kill = True
+        kill(self._process.pid, SIGTERM)
+
+    def get_response(self):
+        return self._response_queue.get()
+
+    def _wait_until_started(self):
+        while not self._has_started():
+            sleep(1)
+        self._response_queue.put((OSProcessMonitorThreadMessage.STARTED, self._process.pid))
+
+    def _wait_until_stopped(self):
+        while not self._has_stopped():
+            sleep(1)
+        self._response_queue.put((OSProcessMonitorThreadMessage.STOPPED, self._process.pid))
+
+        if self._safe_kill == False and self._service.is_always_restart():
+            self._osprocess_request_queue.put((OSProcessThreadMessage.RESTART,))
+
+    def _has_started(self):
+        return True
+
+    def _has_stopped(self):
+        return True
+
+    def _spawn_process(self):
+        return Popen(self._service.command(), shell=True, stdout=None, stderr=None)
+
+    def _post_exec(self):
+        pass
+
 
 # # # OS PROCESS THREAD MESSAGE # # #
 
 class OSProcessThreadMessage:
-    START = "start"
-    STOP = "stop"
+    START = "START"
+    STOP = "STOP"
+    RESTART = "RESTART"
 
 
 # # # OS PROCESS THREAD # # #
 
-from time import sleep
+from signal import SIGTERM
 
 class OSProcessThread(Thread):
     def __init__(self, service):
@@ -71,7 +143,9 @@ class OSProcessThread(Thread):
         self.__handlers = {
             OSProcessThreadMessage.START : self.__start,
             OSProcessThreadMessage.STOP : self.__stop,
+            OSProcessThreadMessage.RESTART : self.__restart,
         }
+        self.__osprocess_monitor_thread = None
 
     def run(self):
         while True:
@@ -79,34 +153,49 @@ class OSProcessThread(Thread):
             self.__handlers.get(_message[0])()
             self.__request_queue.task_done()
 
-        self.__shutdown()
-
-    def set_request(self, message):
+    def put_request(self, message):
         self.__request_queue.put(message)
         self.__request_queue.join()
 
     def get_response(self):
         return self.__response_queue.get()
 
-    def __shutdown(self):
-        logging.info("{}:{} >> Shutting down".format(self.__class__.__name__, self.__service))
-
     def __start(self):
-        logging.info("{}:{} << RECEIVED: [START]".format(self.__class__.__name__, self.__service))
-        sleep(2)
-        self.__response_queue.put("STARTED")
+        logging.info("{}:{} << Received: [{}]".format(self.__class__.__name__, self.__service, OSProcessThreadMessage.START))
+
+        self.__start_osprocess_monitor_thread()
+
+        self.__response_queue.put((OSProcessMonitorThreadMessage.STARTED,))
 
     def __stop(self):
-        logging.info("{}:{} << RECEIVED: [STOP]".format(self.__class__.__name__, self.__service))
-        sleep(2)
-        self.__response_queue.put("STOPPED")
+        logging.info("{}:{} << Received: [{}]".format(self.__class__.__name__, self.__service, OSProcessThreadMessage.STOP))
+
+        if self.__osprocess_monitor_thread is not None:
+            self.__osprocess_monitor_thread.kill()
+
+            _response = self.__osprocess_monitor_thread.get_response()
+            logging.info("{}:{} << Received: {}".format(self.__class__.__name__, self.__service, _response))
+
+        self.__response_queue.put((OSProcessMonitorThreadMessage.STOPPED,))
+
+    def __restart(self):
+        logging.info("{}:{} << Received: [{}]".format(self.__class__.__name__, self.__service, OSProcessThreadMessage.RESTART))
+
+        self.__start_osprocess_monitor_thread()
+
+    def __start_osprocess_monitor_thread(self):
+        self.__osprocess_monitor_thread = OSProcessMonitorThread(self.__service, self.__request_queue)
+        self.__osprocess_monitor_thread.start()
+
+        _response = self.__osprocess_monitor_thread.get_response()
+        logging.info("{}:{} << Received: {}".format(self.__class__.__name__, self.__service, _response))
 
 
 # # # SERVICE THREAD MESSAGE # # #
 
 class ServiceThreadMessage:
-    RESTART = "restart"
-    ADD_QUEUE = "add_queue"
+    RESTART = "RESTART"
+    ADD_QUEUE = "ADD_QUEUE"
 
 
 # # # SERVICE THREAD # # #
@@ -122,7 +211,6 @@ class ServiceThread(Thread):
             ServiceThreadMessage.ADD_QUEUE : self.__add_queue,
         }
         self.__osprocess_thread = None
-        self.__running = False
 
     def run(self):
         logging.info("{}:{} >> Ready".format(self.__class__.__name__, self.__service))
@@ -146,18 +234,15 @@ class ServiceThread(Thread):
     def __restart(self, message):
         logging.info("{}:{} << Received RESTART message".format(self.__class__.__name__, self.__service))
 
-        if self.__running:
-            self.__osprocess_thread.set_request((OSProcessThreadMessage.STOP,))
-            _process_response = self.__osprocess_thread.get_response()
-            logging.info("{}:{} << Received: {}".format(self.__class__.__name__, self.__service, _process_response))
-            self.__running = False
-
-        self.__osprocess_thread.set_request((OSProcessThreadMessage.START,))
-        _process_response = self.__osprocess_thread.get_response()
-        logging.info("{}:{} << Received: {}".format(self.__class__.__name__, self.__service, _process_response))
-        self.__running = True
+        self.__send_to_osprocess_thread((OSProcessThreadMessage.STOP,))
+        self.__send_to_osprocess_thread((OSProcessThreadMessage.START,))
 
         self.__notify((ServiceThreadMessage.RESTART,))
+
+    def __send_to_osprocess_thread(self, message):
+        self.__osprocess_thread.put_request(message)
+        _process_response = self.__osprocess_thread.get_response()
+        logging.info("{}:{} << Received: {}".format(self.__class__.__name__, self.__service, _process_response))
 
     def __add_queue(self, message):
         _service_name, _queue = message
@@ -241,7 +326,6 @@ class Service:
         self.__policy = policy
         self.__provider = provider
         self.__params = params
-        self.__pid = None
 
     def name(self):
         return self.__name
@@ -252,6 +336,9 @@ class Service:
     def policy(self):
         return self.__policy
 
+    def is_always_restart(self):
+        return self.__policy == RestartPolicy.ALWAYS
+
     def provider(self):
         return self.__provider
 
@@ -260,15 +347,6 @@ class Service:
 
     def param(self, index):
         return self.__params.get(index, None)
-
-    def pid(self):
-        return self.__pid
-
-    def started(self, pid):
-        self.__pid = pid
-
-    def stopped(self):
-        self.__pid = None
 
     def __str__(self):
         return "{0}:{1}".format(self.__name, self.__provider)
