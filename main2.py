@@ -92,12 +92,9 @@ class OSProcessMonitorThread(Thread):
                 self._process.returncode
             ))
 
-    def kill(self):
+    def terminate(self):
         self._safe_kill = True
-        try:
-            kill(self._process.pid, SIGTERM)
-        except ProcessLookupError:
-            pass
+        self._process.terminate()
 
     def get_response(self):
         return self._response_queue.get()
@@ -137,8 +134,6 @@ class OSProcessThreadMessage:
 
 
 # # # OS PROCESS THREAD # # #
-
-from signal import SIGTERM
 
 class OSProcessThread(Thread):
     def __init__(self, service, service_request_queue):
@@ -199,7 +194,7 @@ class OSProcessThread(Thread):
 
     def __stop_osprocess_monitor_thread(self):
         if self.__osprocess_monitor_thread.is_alive():
-            self.__osprocess_monitor_thread.kill()
+            self.__osprocess_monitor_thread.terminate()
 
             logging.info("{}:{} >> Response from [{}]: {}".format(
                 self.__class__.__name__,
