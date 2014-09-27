@@ -43,33 +43,37 @@ class JSONParser:
         return self.__dependencies
 
 
-# # # OS PROCESS MESSAGE # # #
+# # # OS PROCESS MONITOR THREAD # # #
 
-class OSProcessMessage:
+from queue import Queue
+from threading import Thread
+
+class OSProcessMonitorThread(Thread):
+    pass
+
+# # # OS PROCESS THREAD MESSAGE # # #
+
+class OSProcessThreadMessage:
     START = "start"
     STOP = "stop"
 
 
-# # # OS PROCESS # # #
+# # # OS PROCESS THREAD # # #
 
 from time import sleep
-from queue import Queue
-from threading import Thread
 
-class OSProcess(Thread):
-    def __init__(self, service, request_queue, result_queue):
+class OSProcessThread(Thread):
+    def __init__(self, service):
         super().__init__()
         self.__service = service
-        self.__request_queue = request_queue
-        self.__result_queue = result_queue
+        self.__request_queue = Queue()
+        self.__response_queue = Queue()
         self.__handlers = {
-            OSProcessMessage.START : self.__start,
-            OSProcessMessage.STOP : self.__stop,
+            OSProcessThreadMessage.START : self.__start,
+            OSProcessThreadMessage.STOP : self.__stop,
         }
 
     def run(self):
-        logging.info("{}:{} >> Ready".format(self.__class__.__name__, self.__service))
-
         while True:
             _message = self.__request_queue.get()
             self.__handlers.get(_message[0])()
@@ -77,86 +81,91 @@ class OSProcess(Thread):
 
         self.__shutdown()
 
+    def set_request(self, message):
+        self.__request_queue.put(message)
+        self.__request_queue.join()
+
+    def get_response(self):
+        return self.__response_queue.get()
+
     def __shutdown(self):
         logging.info("{}:{} >> Shutting down".format(self.__class__.__name__, self.__service))
 
     def __start(self):
         logging.info("{}:{} << RECEIVED: [START]".format(self.__class__.__name__, self.__service))
         sleep(2)
-        self.__result_queue.put("STARTED")
+        self.__response_queue.put("STARTED")
 
     def __stop(self):
         logging.info("{}:{} << RECEIVED: [STOP]".format(self.__class__.__name__, self.__service))
         sleep(2)
-        self.__result_queue.put("STOPPED")
+        self.__response_queue.put("STOPPED")
 
 
-# # # MONITOR MESSAGE # # #
+# # # SERVICE THREAD MESSAGE # # #
 
-class MonitorMessage:
+class ServiceThreadMessage:
     RESTART = "restart"
     ADD_QUEUE = "add_queue"
 
 
-# # # MONITOR # # #
+# # # SERVICE THREAD # # #
 
-class Monitor(Thread):
+class ServiceThread(Thread):
     def __init__(self, service, queue):
         super().__init__()
         self.__service = service
-        self.__inbound_queue = queue
-        self.__outbound_queues = []
+        self.__request_queue = queue
+        self.__response_queues = []
         self.__handlers = {
-            MonitorMessage.RESTART : self.__restart,
-            MonitorMessage.ADD_QUEUE : self.__add_queue,
+            ServiceThreadMessage.RESTART : self.__restart,
+            ServiceThreadMessage.ADD_QUEUE : self.__add_queue,
         }
-        self.__process_started = False
-        self.__process_req_queue = Queue()
-        self.__process_res_queue = Queue()
+        self.__osprocess_thread = None
+        self.__running = False
 
     def run(self):
         logging.info("{}:{} >> Ready".format(self.__class__.__name__, self.__service))
 
+        self.__osprocess_thread = OSProcessThread(self.__service)
+        self.__osprocess_thread.start()
+
         while True:
-            _message = self.__inbound_queue.get()
+            _message = self.__request_queue.get()
             self.__handlers.get(_message[0])(_message[1:])
-            self.__inbound_queue.task_done()
+            self.__request_queue.task_done()
 
         self.__shutdown()
 
     def __shutdown(self):
         logging.info("{}:{} >> Shutting down".format(self.__class__.__name__, self.__service))
 
-    def inbound_queue(self):
-        return self.__inbound_queue
+    def request_queue(self):
+        return self.__request_queue
 
     def __restart(self, message):
         logging.info("{}:{} << Received RESTART message".format(self.__class__.__name__, self.__service))
-        if self.__process_started:
-            self.__process_req_queue.put((OSProcessMessage.STOP,))
-            self.__process_req_queue.join()
 
-            _process_message = self.__process_res_queue.get()
-            self.__process_started = False
+        if self.__running:
+            self.__osprocess_thread.set_request((OSProcessThreadMessage.STOP,))
+            _process_response = self.__osprocess_thread.get_response()
+            logging.info("{}:{} << Received: {}".format(self.__class__.__name__, self.__service, _process_response))
+            self.__running = False
 
-        _process = OSProcess(self.__service, self.__process_req_queue, self.__process_res_queue)
-        _process.start()
+        self.__osprocess_thread.set_request((OSProcessThreadMessage.START,))
+        _process_response = self.__osprocess_thread.get_response()
+        logging.info("{}:{} << Received: {}".format(self.__class__.__name__, self.__service, _process_response))
+        self.__running = True
 
-        self.__process_req_queue.put((OSProcessMessage.START,))
-        self.__process_req_queue.join()
-
-        _process_message = self.__process_res_queue.get()
-        self.__process_started = True
-
-        self.__notify((MonitorMessage.RESTART,))
+        self.__notify((ServiceThreadMessage.RESTART,))
 
     def __add_queue(self, message):
         _service_name, _queue = message
-        self.__outbound_queues.append(_queue)
+        self.__response_queues.append(_queue)
         logging.info("{}:{} >> Registered to publish over [{}]".format(self.__class__.__name__, self.__service, _service_name))
 
     def __notify(self, message):
-        for queue in self.__outbound_queues:
+        for queue in self.__response_queues:
             queue.put(message)
 
     def __str__(self):
@@ -180,22 +189,22 @@ class Supervisor:
 
     def init(self):
         for service in self.__graph.nodes():
-            _monitor = self.__create_monitor_for(service)
-            _monitor.start()
+            _service_thread = self.__create_service_thread_for(service)
+            _service_thread.start()
 
         for edge in self.__graph.edges():
             _parent_service, _child_service = edge
 
-            self.__send_to(_parent_service, (MonitorMessage.ADD_QUEUE, _child_service.name(), self.__queues[_child_service]), True)
+            self.__send_to(_parent_service, (ServiceThreadMessage.ADD_QUEUE, _child_service.name(), self.__queues[_child_service]), True)
 
     def start(self):
         for service in self.__graph.nodes():
             if len(self.__graph.in_edges(service)) == 0:
-                self.__send_to(service, (MonitorMessage.RESTART,))
+                self.__send_to(service, (ServiceThreadMessage.RESTART,))
 
-    def __create_monitor_for(self, service):
+    def __create_service_thread_for(self, service):
         _queue = self.__create_queue_for(service)
-        return Monitor(service, _queue)
+        return ServiceThread(service, _queue)
 
     def __create_queue_for(self, service):
         self.__queues[service] = Queue()
