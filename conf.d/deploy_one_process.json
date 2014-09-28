@@ -1,7 +1,7 @@
 [
   {
-    "name"    : "one",
-    "command" : "sleep 600; exit 0",
-    "restart" : "always"
+    "name"     : "one",
+    "command"  : "while [ 1 ]; do sleep 10; done",
+    "restart"  : "always"
   }
 ]

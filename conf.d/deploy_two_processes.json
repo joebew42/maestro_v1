@@ -1,0 +1,13 @@
+[
+  {
+    "name"     : "one",
+    "command"  : "sleep 600; exit 0",
+    "restart"  : "always"
+  },
+  {
+    "name"     : "two",
+    "command"  : "sleep 600; exit 0",
+    "restart"  : "always",
+    "requires" : [ "one" ]
+  }
+]

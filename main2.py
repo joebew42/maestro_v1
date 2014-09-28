@@ -55,7 +55,9 @@ from queue import Queue
 from threading import Thread
 from subprocess import Popen
 from time import sleep
-from os import kill
+from os import killpg, setsid
+from signal import SIGTERM
+from shlex import split as shell_split
 
 class OSProcessMonitorThread(Thread):
     def __init__(self, service, osprocess_request_queue):
@@ -64,7 +66,7 @@ class OSProcessMonitorThread(Thread):
         self._osprocess_request_queue = osprocess_request_queue
         self._response_queue = Queue()
         self._process = None
-        self._safe_kill = False
+        self._notify = True
 
     def run(self):
         self._process = self._spawn_process()
@@ -93,8 +95,8 @@ class OSProcessMonitorThread(Thread):
             ))
 
     def terminate(self):
-        self._safe_kill = True
-        self._process.terminate()
+        self._notify = False
+        killpg(self._process.pid, SIGTERM)
 
     def get_response(self):
         return self._response_queue.get()
@@ -109,7 +111,7 @@ class OSProcessMonitorThread(Thread):
             sleep(1)
         self._response_queue.put((OSProcessMonitorThreadMessage.STOPPED, self._process.pid))
 
-        if self._safe_kill == False and self._service.is_always_restart():
+        if self._notify == True and self._service.is_always_restart():
             self._osprocess_request_queue.put((OSProcessThreadMessage.RESTART,))
 
     def _has_started(self):
@@ -119,7 +121,9 @@ class OSProcessMonitorThread(Thread):
         return True
 
     def _spawn_process(self):
-        return Popen(self._service.command(), shell=True, stdout=None, stderr=None)
+        _cmd = "sh -c \"{}\"".format(self._service.command())
+        _args = shell_split(_cmd)
+        return Popen(_args, shell=False, preexec_fn=setsid, stdout=None, stderr=None)
 
     def _post_exec(self):
         pass
