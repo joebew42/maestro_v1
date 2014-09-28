@@ -239,11 +239,6 @@ class ServiceThread(Thread):
             self.__handlers.get(_message[0])(_message[1:])
             self.__request_queue.task_done()
 
-        self.__shutdown()
-
-    def __shutdown(self):
-        logging.info("{}:{} >> Shutting down".format(self.__class__.__name__, self.__service))
-
     def request_queue(self):
         return self.__request_queue
 
