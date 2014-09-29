@@ -121,7 +121,7 @@ class OSProcessMonitorThread(Thread):
         return True
 
     def _spawn_process(self):
-        _cmd = "sh -c \"{}\"".format(self._service.command())
+        _cmd = "sh -c \"{}\"".format(self._service.command().replace('"', '\\"'))
         _args = shell_split(_cmd)
         return Popen(_args, shell=False, preexec_fn=setsid, stdout=None, stderr=None)
 
