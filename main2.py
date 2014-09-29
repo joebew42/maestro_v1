@@ -49,6 +49,7 @@ class OSProcessMonitorThreadMessage:
     STARTED = "STARTED"
     STOPPED = "STOPPED"
 
+
 # # # OS PROCESS MONITOR THREAD # # #
 
 from queue import Queue
@@ -109,9 +110,9 @@ class OSProcessMonitorThread(Thread):
     def _wait_until_stopped(self):
         while not self._has_stopped():
             sleep(1)
-        self._response_queue.put((OSProcessMonitorThreadMessage.STOPPED, self._process.pid))
+        self._response_queue.put((OSProcessMonitorThreadMessage.STOPPED, self._process.pid, self._process.returncode))
 
-        if self._notify == True and self._service.is_always_restart():
+        if self._notify == True and self._service.is_to_be_restart_with(self._process.returncode):
             self._osprocess_request_queue.put((OSProcessThreadMessage.RESTART,))
 
     def _has_started(self):
@@ -206,6 +207,7 @@ class OSProcessThread(Thread):
                 self.__osprocess_monitor_thread.__class__.__name__,
                 self.__osprocess_monitor_thread.get_response()
             ))
+
 
 # # # SERVICE THREAD MESSAGE # # #
 
@@ -347,8 +349,14 @@ class Service:
     def policy(self):
         return self.__policy
 
-    def is_always_restart(self):
-        return self.__policy == RestartPolicy.ALWAYS
+    def is_to_be_restart_with(self, returncode):
+        if self.__policy == RestartPolicy.ALWAYS:
+            return True
+
+        if self.__policy == RestartPolicy.ON_ERROR and returncode != 0:
+            return True
+
+        return False
 
     def provider(self):
         return self.__provider
@@ -366,6 +374,7 @@ class Service:
         return hash(self.__name)
 
     __repr__ = __str__
+
 
 # # # MAIN # # #
 
