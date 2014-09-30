@@ -213,20 +213,20 @@ class OSProcessThread(Thread):
 
 class ServiceThreadMessage:
     RESTART = "RESTART"
-    ADD_QUEUE = "ADD_QUEUE"
+    ADD_CHILD = "ADD_CHILD"
 
 
 # # # SERVICE THREAD # # #
 
 class ServiceThread(Thread):
-    def __init__(self, service, queue):
+    def __init__(self, service):
         super().__init__()
         self.__service = service
-        self.__request_queue = queue
-        self.__response_queues = []
+        self.__request_queue = Queue()
+        self.__children = []
         self.__handlers = {
             ServiceThreadMessage.RESTART : self.__restart,
-            ServiceThreadMessage.ADD_QUEUE : self.__add_queue,
+            ServiceThreadMessage.ADD_CHILD : self.__add_child,
         }
         self.__osprocess_thread = None
 
@@ -241,8 +241,10 @@ class ServiceThread(Thread):
             self.__handlers.get(_message[0])(_message[1:])
             self.__request_queue.task_done()
 
-    def request_queue(self):
-        return self.__request_queue
+    def put_request(self, message, block=False):
+        self.__request_queue.put(message)
+        if block:
+            self.__request_queue.join()
 
     def __restart(self, message):
         logging.info("{}:{} << Received RESTART message".format(self.__class__.__name__, self.__service))
@@ -257,14 +259,14 @@ class ServiceThread(Thread):
         _process_response = self.__osprocess_thread.get_response()
         logging.info("{}:{} << Received: {}".format(self.__class__.__name__, self.__service, _process_response))
 
-    def __add_queue(self, message):
-        _service_name, _queue = message
-        self.__response_queues.append(_queue)
-        logging.info("{}:{} >> Registered to publish over [{}]".format(self.__class__.__name__, self.__service, _service_name))
+    def __add_child(self, message):
+        _child = message[0]
+        self.__children.append(_child)
+        logging.info("{} >> Registered to publish over [{}]".format(self, _child))
 
     def __notify(self, message):
-        for queue in self.__response_queues:
-            queue.put(message)
+        for child in self.__children:
+            child.put_request(message)
 
     def __str__(self):
         return "{}:{}".format(self.__class__.__name__, self.__service)
@@ -276,7 +278,7 @@ import networkx as nx
 
 class Supervisor:
     def __init__(self):
-        self.__queues = {}
+        self.__services = {}
         self.__graph = nx.DiGraph()
 
     def add(self, service):
@@ -287,31 +289,18 @@ class Supervisor:
 
     def init(self):
         for service in self.__graph.nodes():
-            _service_thread = self.__create_service_thread_for(service)
-            _service_thread.start()
+            self.__services[service] = ServiceThread(service)
+            self.__services[service].start()
 
         for edge in self.__graph.edges():
             _parent_service, _child_service = edge
 
-            self.__send_to(_parent_service, (ServiceThreadMessage.ADD_QUEUE, _child_service.name(), self.__queues[_child_service]), True)
+            self.__services[_parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[_child_service]), True)
 
     def start(self):
         for service in self.__graph.nodes():
             if len(self.__graph.in_edges(service)) == 0:
-                self.__send_to(service, (ServiceThreadMessage.RESTART,))
-
-    def __create_service_thread_for(self, service):
-        _queue = self.__create_queue_for(service)
-        return ServiceThread(service, _queue)
-
-    def __create_queue_for(self, service):
-        self.__queues[service] = Queue()
-        return self.__queues[service]
-
-    def __send_to(self, service, message, block=False):
-        self.__queues[service].put(message)
-        if block:
-            self.__queues[service].join()
+                self.__services[service].put_request((ServiceThreadMessage.RESTART,))
 
 
 # # # RESTART POLICIES # # #
