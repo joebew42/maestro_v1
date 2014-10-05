@@ -159,7 +159,7 @@ class ServiceThread(Thread):
         self.__osprocess_thread = Thread()
 
     def run(self):
-        logging.info("{}:{} >> Ready".format(self.__class__.__name__, self.__service))
+        logging.info("{} >> Ready".format(self))
 
         while True:
             _message = self.__request_queue.get()
