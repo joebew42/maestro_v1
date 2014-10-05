@@ -139,10 +139,13 @@ class ServiceThreadMessage:
     START = "START"
     STOP = "STOP"
     RESTART = "RESTART"
+    HALT = "HALT"
     ADD_CHILD = "ADD_CHILD"
 
 
 # # # SERVICE THREAD # # #
+
+from threading import Event
 
 class ServiceThread(Thread):
     def __init__(self, service):
@@ -154,14 +157,16 @@ class ServiceThread(Thread):
             ServiceThreadMessage.START : self.__start,
             ServiceThreadMessage.STOP : self.__stop,
             ServiceThreadMessage.RESTART : self.__restart,
+            ServiceThreadMessage.HALT : self.__halt,
             ServiceThreadMessage.ADD_CHILD : self.__add_child,
         }
         self.__osprocess_thread = Thread()
+        self.__terminated = Event()
 
     def run(self):
         logging.info("{} >> Ready".format(self))
 
-        while True:
+        while not self.__terminated.is_set():
             _message = self.__request_queue.get()
             self.__handlers.get(_message[0])(_message[1:])
             self.__request_queue.task_done()
@@ -200,8 +205,14 @@ class ServiceThread(Thread):
     def __restart(self, message):
         logging.info("{} << Received RESTART message".format(self))
 
-        self.__stop(None)
-        self.__start(None)
+        self.__stop(message)
+        self.__start(message)
+
+    def __halt(self, message):
+        logging.info("{} << Received HALT message".format(self))
+
+        self.__stop(message)
+        self.__terminated.set()
 
     def __add_child(self, message):
         _child = message[0]
@@ -245,8 +256,29 @@ class Supervisor:
         for service in self.__initial_services():
             self.__services[service].put_request((ServiceThreadMessage.START,))
 
+        while True:
+            try:
+                sleep(10)
+            except KeyboardInterrupt:
+                self.__shutdown()
+
     def __initial_services(self):
         return [service for service in self.__graph.nodes() if len(self.__graph.in_edges(service)) == 0]
+
+    def __shutdown(self):
+        logging.info("{} >> Shutting down...".format(self))
+
+        for service in self.__sorted_services()[::-1]:
+            logging.info("{} >> Halting {} ...".format(self, service))
+            self.__services[service].put_request((ServiceThreadMessage.HALT,), True)
+
+        exit(0)
+
+    def __sorted_services(self):
+        return nx.topological_sort(self.__graph)
+
+    def __str__(self):
+        return "{}".format(self.__class__.__name__)
 
 
 # # # RESTART POLICIES # # #
