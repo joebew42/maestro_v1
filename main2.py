@@ -313,8 +313,6 @@ class Service:
 
 import sys
 
-from random import randrange
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
