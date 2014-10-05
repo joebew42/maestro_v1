@@ -242,9 +242,11 @@ class Supervisor:
             self.__services[_parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[_child_service]), True)
 
     def start(self):
-        for service in self.__graph.nodes():
-            if len(self.__graph.in_edges(service)) == 0:
-                self.__services[service].put_request((ServiceThreadMessage.START,))
+        for service in self.__initial_services():
+            self.__services[service].put_request((ServiceThreadMessage.START,))
+
+    def __initial_services(self):
+        return [service for service in self.__graph.nodes() if len(self.__graph.in_edges(service)) == 0]
 
 
 # # # RESTART POLICIES # # #
