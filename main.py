@@ -461,7 +461,6 @@ class Supervisor:
                 sleep(10)
             except KeyboardInterrupt:
                 self.__shutdown()
-                self.__logfile.close()
 
     def __initial_services(self):
         return [service for service in self.__graph.nodes() if len(self.__graph.in_edges(service)) == 0]
@@ -473,6 +472,7 @@ class Supervisor:
             logging.info("{} >> Halting {} ...".format(self, service))
             self.__services[service].put_request((ServiceThreadMessage.HALT,), True)
 
+        self.__logfile.close()
         exit(0)
 
     def __sorted_services(self):
