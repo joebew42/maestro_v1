@@ -32,7 +32,7 @@ class JSONParser:
         dependencies = []
         for item in json:
             for dependency_name in item.get('requires', []):
-                dependencies.append((services[item['name']], services[dependency_name]))
+                dependencies.append((services[dependency_name], services[item['name']]))
         logging.info("JSONPARSER >> Resolved dependencies: {}".format(dependencies))
         return dependencies
 
@@ -42,231 +42,43 @@ class JSONParser:
     def dependencies(self):
         return self.__dependencies
 
-# # # SCHEDULER TASK # # #
 
-class SchedulerTask:
-    START = 1
-    STOP = 0
+# # # OS PROCESS THREAD MESSAGE # # #
 
-    def __init__(self, start_queue, stop_queue):
-        self.__start_queue = start_queue
-        self.__stop_queue = stop_queue
+class OSProcessThreadMessage:
+    STARTED = "STARTED"
+    STOPPED = "STOPPED"
 
-    def pop(self):
-        if len(self.__stop_queue) > 0:
-            return self.STOP, self.__stop_queue.pop(0)
 
-        if len(self.__start_queue) > 0:
-            return self.START, self.__start_queue.pop(0)
+# # # OS PROCESS THREAD # # #
 
-        return None, None
-
-    def is_empty(self):
-        return len(self.__start_queue) == 0
-
-# # # SCHEDULER # # #
-
-import networkx as nx
-
-class DAGScheduler:
-    """
-    This is a scheduler based on a Directed Acyclic Graph
-    """
-    MAX_DEPTH = 1
-
-    def __init__(self):
-        self.__services = {}
-        self.__graph = nx.DiGraph()
-        self.__tasks = []
-        self.__current_task = None
-
-    def add(self, service):
-        self.__services[service.name()] = service
-        self.__graph.add_node(service)
-
-    def add_dependency(self, service, required_service):
-        self.__graph.add_edge(required_service, service)
-
-        if len(self.__graph.in_edges(service)) > 1:
-            for edge in self.__graph.in_edges(service):
-                if self.__path_exists(edge[0], edge[1], self.MAX_DEPTH):
-                    self.__graph.remove_edge(edge[0], edge[1])
-                    logging.info("SCHEDULER >> {} is already expressed and is not required, removed.".format(edge))
-
-    def init(self):
-        self.__add_task(self.__sorted_services())
-        self.__current_task = self.__tasks.pop(0)
-
-    def init_from(self, service):
-        _services = self.__sorted_services_from(service)
-
-        self.__add_task(_services, _services[1:][::-1])
-
-    def __add_task(self, start_queue, stop_queue=[]):
-        self.__tasks.append(SchedulerTask(start_queue, stop_queue))
-
-    def pop(self):
-        if self.__current_task.is_empty() and len(self.__tasks) > 0:
-            self.__current_task = self.__tasks.pop(0)
-
-        return self.__current_task.pop()
-
-    def __sorted_services(self):
-        return self.__topological_sort(self.__graph)
-
-    def __sorted_services_from(self, service):
-        return self.__topological_sort(nx.bfs_tree(self.__graph, service))
-
-    def __topological_sort(self, graph):
-        sorted_services = nx.topological_sort(graph)
-        logging.info("SCHEDULER >> Computed topological sorting of the services is: {}".format(sorted_services))
-        return sorted_services
-
-    def __path_exists(self, source, target, max_depth, depth=0):
-        if source == target and depth > max_depth:
-            return True
-
-        results = []
-        for edge in self.__graph.edges(source):
-            results.append(self.__path_exists(edge[1], target, self.MAX_DEPTH, depth+1))
-
-        return True in results
-
-    def __getitem__(self, service_name):
-        return self.__services[service_name]
-
-# # # SUPERVISOR # # #
-
-import os
-import signal
-
-from multiprocessing import Process, Queue
-
-class Supervisor:
-    def __init__(self, scheduler, logfile_name="supervisor.log"):
-        self.__scheduler = scheduler
-        self.__logfile_name = logfile_name
-        self.__logfile = None
-        self.__queue = Queue()
-
-    def add(self, service):
-        self.__scheduler.add(service)
-
-    def add_dependency(self, service, required_service):
-        self.__scheduler.add_dependency(service, required_service)
-
-    def __service(self, name):
-        return self.__scheduler[name]
-
-    def start(self):
-        logging.info("SUPERVISOR >> Start")
-
-        self.__logfile = open(self.__logfile_name, "a")
-        self.__scheduler.init()
-        self.__process_next()
-
-        try:
-            self.__run()
-        except KeyboardInterrupt:
-            logging.info("SUPERVISOR >> Keyboard Interrupt received: Stopping ...")
-        finally:
-            self.__logfile.close()
-
-    def __run(self):
-        while True:
-            _message = self.__queue.get(True, None)
-            self.__handle(_message)
-
-    def __handle(self, message):
-        logging.info("SUPERVISOR << Received message [{0}]".format(message))
-
-        if 'service_status' in message:
-            self.__handle_service_status(message['service_name'], message['service_status'], message['service_pid'])
-
-        if 'service_returncode' in message:
-            self.__handle_service_returncode(message['service_name'], message['service_returncode'])
-
-        self.__process_next()
-
-    def __handle_service_status(self, service_name, service_status, service_pid):
-        _service = self.__service(service_name)
-
-        if service_status == 'started':
-            _service.started(service_pid)
-
-        if service_status == 'stopped':
-            _service.stopped()
-
-    def __handle_service_returncode(self, service_name, returncode):
-        service = self.__service(service_name)
-
-        if service.policy() == RestartPolicy.NONE:
-            self.__exited(service)
-
-        if service.policy() == RestartPolicy.ALWAYS:
-            self.__restart(service)
-
-        if service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
-            self.__restart(service)
-
-    def __process_next(self):
-        _action, _service = self.__scheduler.pop()
-
-        if _action == SchedulerTask.START:
-            self.__start(_service, self.__logfile)
-
-        if _action == SchedulerTask.STOP:
-            self.__stop(_service)
-
-    def __start(self, service, logfile):
-        if service.provider() == Provider.DEFAULT:
-            process = CommandProcess(service, self.__queue, logfile)
-
-        if service.provider() == Provider.DOCKERFILE:
-            process = DockerfileProcess(service, self.__queue, logfile)
-
-        if service.provider() == Provider.DOCKER:
-            process = DockerProcess(service, self.__queue, logfile)
-
-        process.start()
-
-    def __stop(self, service):
-        if service.pid() is not None:
-            logging.info("SUPERVISOR >> Sending SIGTERM to [{0}]".format(service))
-            os.kill(service.pid(), signal.SIGTERM)
-
-    def __restart(self, service):
-        self.__scheduler.init_from(service)
-
-    def __exited(self, service):
-        logging.info("SUPERVISOR >> [{0}] exited with [{1}] policy".format(service.name(), service.policy()))
-
-# # # ABSTRACT PROCESS # # #
-
+from queue import Queue
+from threading import Thread
 from time import sleep
+from os import killpg, setsid
+from signal import SIGTERM
+from shlex import split as shell_split
 
-class AbstractProcess(Process):
-    """
-    Abstract class used to describe each processes instance
-    """
-    def __init__(self, service, queue, logfile=None):
+class OSProcessThread(Thread):
+    def __init__(self, service_thread, logfile):
         super().__init__()
-        self._service = service
-        self._queue = queue
+        self._service_thread = service_thread
         self._logfile = logfile
+        self._service = service_thread.service()
+        self._response_queue = Queue()
         self._process = None
         self._notify = True
 
     def run(self):
         self._process = self._spawn_process()
-        logging.info("{0}:{1} >> Spawned [{2}]: PID [{3}] with restart policy [{4}]".format(
-            self.__class__.__name__.upper(),
-            self.pid,
-            self._service.name(),
+
+        logging.info("{} >> Spawned [{}] with restart policy [{}]".format(
+            self,
             self._process.pid,
-            self._service.policy()))
+            self._service.policy()
+        ))
+
         try:
-            signal.signal(signal.SIGTERM, self._signal_handler)
             self._wait_until_started()
             self._process.wait()
         except KeyboardInterrupt:
@@ -275,24 +87,33 @@ class AbstractProcess(Process):
             self._post_exec()
             self._wait_until_stopped()
 
-            logging.info("{0} >> [{1}] with PID [{2}] exit with [{3}]".format(
-                self.__class__.__name__.upper(),
-                self._service.name(),
+            logging.info("{} >> PID [{}] has exited with [{}]".format(
+                self,
                 self._process.pid,
-                self._process.returncode))
+                self._process.returncode
+            ))
 
-            if self._notify:
-                self._queue.put({'service_name' : self._service.name(), 'service_returncode' : self._process.returncode})
+    def terminate(self):
+        self._notify = False
+        killpg(self._process.pid, SIGTERM)
+
+    def get_response(self):
+        return self._response_queue.get()
 
     def _wait_until_started(self):
         while not self._has_started():
             sleep(1)
-        self._queue.put({'service_name' : self._service.name(), 'service_status' : 'started', 'service_pid' : self.pid})
+
+        self._response_queue.put((OSProcessThreadMessage.STARTED, self._process.pid))
 
     def _wait_until_stopped(self):
         while not self._has_stopped():
             sleep(1)
-        self._queue.put({'service_name' : self._service.name(), 'service_status' : 'stopped', 'service_pid' : None})
+
+        self._response_queue.put((OSProcessThreadMessage.STOPPED, self._process.pid, self._process.returncode))
+
+        if self._notify == True and self._service.is_to_be_restart_with(self._process.returncode):
+            self._service_thread.put_request((ServiceThreadMessage.RESTART,))
 
     def _has_started(self):
         return True
@@ -300,38 +121,35 @@ class AbstractProcess(Process):
     def _has_stopped(self):
         return True
 
-    def _signal_handler(self, signum, frame):
-        self._notify = False
-        os.kill(self._process.pid, signum)
-
     def _spawn_process(self):
         pass
 
     def _post_exec(self):
         pass
 
-# # # COMMAND PROCESS # # #
+    def __str__(self):
+        return "{}:{}".format(self.__class__.__name__, self._service)
 
-import subprocess
 
-class CommandProcess(AbstractProcess):
-    """
-    Command process
-    """
+# # # OS PROCESS COMMAD THREAD # # #
+
+from subprocess import Popen
+
+class OSProcessCommandThread(OSProcessThread):
     def _spawn_process(self):
-        return subprocess.Popen(self._service.command(), shell=True, stdout=self._logfile, stderr=self._logfile)
+        _cmd = "sh -c \"{}\"".format(self._service.command().replace('"', '\\"'))
+        _args = shell_split(_cmd)
+        return Popen(_args, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
 
-# # # DOCKERFILE PROCESS # # #
 
-import subprocess
+# # # OS PROCESS DOCKERFILE THREAD # # #
 
-class DockerfileProcess(AbstractProcess):
-    """
-    Dockerfile process
-    """
+from subprocess import check_output
+
+class OSProcessDockerfileThread(OSProcessThread):
     def _spawn_process(self):
         dockerfile_cmd = ["docker", "build", "-t", self._service.param('image'), self._service.param('path')]
-        return subprocess.Popen(dockerfile_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
+        return Popen(dockerfile_cmd, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
 
     def _has_started(self):
         _image = self._service.param('image').split(':')
@@ -340,19 +158,21 @@ class DockerfileProcess(AbstractProcess):
 
         cmd = "docker images | awk '{{print $1$2}}' | grep \"{0}{1}\"".format(_image[0], _image[1])
         try:
-            return len(subprocess.check_output(cmd, shell=True)) > 0
+            return len(check_output(cmd, shell=True)) > 0
         except:
             return False
 
-# # # DOCKER PROCESS # # #
 
-class DockerProcess(AbstractProcess):
-    """
-    Docker process
-    """
+# # # OS PROCESS DOCKER THREAD # # #
+
+from os import remove as os_remove
+from os.path import exists as os_path_exists
+
+class OSProcessDockerThread(OSProcessThread):
     def _spawn_process(self):
         self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
         docker_cmd = ["docker", "run", "-t", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
+
         # handle ports
         for port in self._service.params('port'):
             docker_cmd += ["--publish=\"{0}\"".format(port)]
@@ -376,15 +196,15 @@ class DockerProcess(AbstractProcess):
         if command is not None:
             docker_cmd += ["sh", "-c", command]
 
-        return subprocess.Popen(docker_cmd, shell=False, stdout=self._logfile, stderr=self._logfile)
+        return Popen(docker_cmd, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
 
     def _post_exec(self):
         with open(self.__cid_file_path, 'r') as cid_file:
             cid = cid_file.read()
 
-        subprocess.Popen(["docker", "kill", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
-        subprocess.Popen(["docker", "rm", "-f", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
-        os.remove(self.__cid_file_path)
+        Popen(["docker", "kill", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
+        Popen(["docker", "rm", "-f", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
+        os_remove(self.__cid_file_path)
 
     def _has_started(self):
         _image = self._service.param('image').split(':')
@@ -393,12 +213,220 @@ class DockerProcess(AbstractProcess):
 
         cmd = "docker images | awk '{{print $1$2}}' | grep \"{0}{1}\"".format(_image[0], _image[1])
         try:
-            return len(subprocess.check_output(cmd, shell=True)) > 0 and os.path.exists(self.__cid_file_path)
+            return len(check_output(cmd, shell=True)) > 0 and os_path_exists(self.__cid_file_path)
         except:
             return False
 
     def _has_stopped(self):
-        return not os.path.exists(self.__cid_file_path)
+        return not os_path_exists(self.__cid_file_path)
+
+
+# # # PROVIDERS # # #
+
+class Provider:
+    DEFAULT    = "command"
+    DOCKERFILE = "dockerfile"
+    DOCKER     = "docker"
+
+
+# # # OS PROCESS THREAD FACTORY
+
+class OSProcessThreadFactory:
+    @staticmethod
+    def create(service_thread, logfile):
+        if service_thread.service().provider() == Provider.DOCKER:
+            return OSProcessDockerThread(service_thread, logfile)
+
+        if service_thread.service().provider() == Provider.DOCKERFILE:
+            return OSProcessDockerfileThread(service_thread, logfile)
+
+        return OSProcessCommandThread(service_thread, logfile)
+
+
+# # # SERVICE THREAD MESSAGE # # #
+
+class ServiceThreadMessage:
+    START = "START"
+    STOP = "STOP"
+    RESTART = "RESTART"
+    HALT = "HALT"
+    ADD_CHILD = "ADD_CHILD"
+    ADD_DEPENDENCY = "ADD_DEPENDENCY"
+
+
+# # # SERVICE THREAD # # #
+
+from threading import Event
+
+class ServiceThread(Thread):
+    def __init__(self, service, logfile):
+        super().__init__()
+        self.__service = service
+        self.__logfile = logfile
+        self.__request_queue = Queue()
+        self.__dependencies = []
+        self.__children = []
+        self.__handlers = {
+            ServiceThreadMessage.START : self.__start,
+            ServiceThreadMessage.STOP : self.__stop,
+            ServiceThreadMessage.RESTART : self.__restart,
+            ServiceThreadMessage.HALT : self.__halt,
+            ServiceThreadMessage.ADD_CHILD : self.__add_child,
+            ServiceThreadMessage.ADD_DEPENDENCY : self.__add_dependency,
+        }
+        self.__osprocess_thread = Thread()
+        self.__terminated = Event()
+        # TODO: replace with state?
+        self.__running = False
+
+    def service(self):
+        return self.__service
+
+    def logfile(self):
+        return self.__logfile
+
+    def run(self):
+        logging.info("{} >> Ready".format(self))
+
+        while not self.__terminated.is_set():
+            _message = self.__request_queue.get()
+            self.__handlers.get(_message[0])(_message[1:])
+            self.__request_queue.task_done()
+
+    def put_request(self, message, block=False):
+        self.__request_queue.put(message)
+        if block:
+            self.__request_queue.join()
+
+    def is_running(self):
+        return self.__running == True;
+
+    def __start(self, message):
+        logging.info("{} << Received START message".format(self))
+
+        if not self.__dependencies_running():
+            logging.info("{} << Unable to perform START: missing dependencies".format(self))
+            return
+
+        self.__osprocess_thread = OSProcessThreadFactory.create(self, self.__logfile)
+        self.__osprocess_thread.start()
+
+        logging.info("{} >> Response from [{}]: {}".format(
+            self,
+            self.__osprocess_thread,
+            self.__osprocess_thread.get_response()
+        ))
+        self.__running = True
+
+        self.__notify((ServiceThreadMessage.RESTART,))
+
+    def __dependencies_running(self):
+        for dependency in self.__dependencies:
+            if not dependency.is_running():
+                logging.info("{} << [{}] is not yet started".format(self, dependency))
+                return False
+
+        return True
+
+    def __stop(self, message):
+        logging.info("{} << Received STOP message".format(self))
+
+        if self.__osprocess_thread.is_alive():
+            self.__osprocess_thread.terminate()
+
+            logging.info("{} >> Response from [{}]: {}".format(
+                self,
+                self.__osprocess_thread,
+                self.__osprocess_thread.get_response()
+            ))
+            self.__running = False
+
+    def __restart(self, message):
+        logging.info("{} << Received RESTART message".format(self))
+
+        self.__stop(message)
+        self.__start(message)
+
+    def __halt(self, message):
+        logging.info("{} << Received HALT message".format(self))
+
+        self.__stop(message)
+        self.__terminated.set()
+
+    def __add_child(self, message):
+        _child = message[0]
+        self.__children.append(_child)
+        logging.info("{} >> Registered to publish over [{}]".format(self, _child))
+
+    def __add_dependency(self, message):
+        _dependency = message[0]
+        self.__dependencies.append(_dependency)
+        logging.info("{} >> Registered dependency [{}]".format(self, _dependency))
+
+    def __notify(self, message):
+        for child in self.__children:
+            child.put_request(message)
+
+    def __str__(self):
+        return "{}:{}".format(self.__class__.__name__, self.__service)
+
+
+# # # SUPERVISOR # # #
+
+import networkx as nx
+
+class Supervisor:
+    def __init__(self, logfile_name="supervisor.log"):
+        self.__services = {}
+        self.__graph = nx.DiGraph()
+        self.__logfile = open(logfile_name, "a")
+
+    def add(self, service):
+        self.__graph.add_node(service)
+
+    def add_dependency(self, required_service, service):
+        self.__graph.add_edge(required_service, service)
+
+    def init(self):
+        for service in self.__graph.nodes():
+            self.__services[service] = ServiceThread(service, self.__logfile)
+            self.__services[service].start()
+
+        for edge in self.__graph.edges():
+            _parent_service, _child_service = edge
+
+            self.__services[_parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[_child_service]), True)
+            self.__services[_child_service].put_request((ServiceThreadMessage.ADD_DEPENDENCY, self.__services[_parent_service]), True)
+
+    def start(self):
+        for service in self.__initial_services():
+            self.__services[service].put_request((ServiceThreadMessage.START,))
+
+        while True:
+            try:
+                sleep(10)
+            except KeyboardInterrupt:
+                self.__shutdown()
+                self.__logfile.close()
+
+    def __initial_services(self):
+        return [service for service in self.__graph.nodes() if len(self.__graph.in_edges(service)) == 0]
+
+    def __shutdown(self):
+        logging.info("{} >> Shutting down...".format(self))
+
+        for service in self.__sorted_services()[::-1]:
+            logging.info("{} >> Halting {} ...".format(self, service))
+            self.__services[service].put_request((ServiceThreadMessage.HALT,), True)
+
+        exit(0)
+
+    def __sorted_services(self):
+        return nx.topological_sort(self.__graph)
+
+    def __str__(self):
+        return "{}".format(self.__class__.__name__)
+
 
 # # # RESTART POLICIES # # #
 
@@ -407,12 +435,6 @@ class RestartPolicy:
     ALWAYS   = "always"
     ON_ERROR = "on-error"
 
-# # # PROVIDERS # # #
-
-class Provider:
-    DEFAULT    = "command"
-    DOCKERFILE = "dockerfile"
-    DOCKER     = "docker"
 
 # # # SERVICE # # #
 
@@ -423,7 +445,6 @@ class Service:
         self.__policy = policy
         self.__provider = provider
         self.__params = params
-        self.__pid = None
 
     def name(self):
         return self.__name
@@ -434,6 +455,15 @@ class Service:
     def policy(self):
         return self.__policy
 
+    def is_to_be_restart_with(self, returncode):
+        if self.__policy == RestartPolicy.ALWAYS:
+            return True
+
+        if self.__policy == RestartPolicy.ON_ERROR and returncode != 0:
+            return True
+
+        return False
+
     def provider(self):
         return self.__provider
 
@@ -443,15 +473,6 @@ class Service:
     def param(self, index):
         return self.__params.get(index, None)
 
-    def pid(self):
-        return self.__pid
-
-    def started(self, pid):
-        self.__pid = pid
-
-    def stopped(self):
-        self.__pid = None
-
     def __str__(self):
         return "{0}:{1}".format(self.__name, self.__provider)
 
@@ -459,6 +480,7 @@ class Service:
         return hash(self.__name)
 
     __repr__ = __str__
+
 
 # # # MAIN # # #
 
@@ -468,15 +490,14 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     if len(sys.argv) < 2:
-        filename = 'deploy.json'
+        filename = 'conf.d/deploy.json'
     else:
         filename = sys.argv[1]
 
-    scheduler = DAGScheduler()
-    supervisor = Supervisor(scheduler)
-
     with open(filename, 'r') as json_file:
         parser = JSONParser(json_file.read())
+
+    supervisor = Supervisor()
 
     for service in parser.services():
         supervisor.add(service)
@@ -484,4 +505,5 @@ if __name__ == "__main__":
     for dependency in parser.dependencies():
         supervisor.add_dependency(dependency[0], dependency[1])
 
+    supervisor.init()
     supervisor.start()
