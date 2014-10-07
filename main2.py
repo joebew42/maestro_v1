@@ -54,7 +54,6 @@ class OSProcessThreadMessage:
 
 from queue import Queue
 from threading import Thread
-from subprocess import Popen
 from time import sleep
 from os import killpg, setsid
 from signal import SIGTERM
@@ -122,9 +121,7 @@ class OSProcessThread(Thread):
         return True
 
     def _spawn_process(self):
-        _cmd = "sh -c \"{}\"".format(self._service.command().replace('"', '\\"'))
-        _args = shell_split(_cmd)
-        return Popen(_args, shell=False, preexec_fn=setsid, stdout=None, stderr=None)
+        pass
 
     def _post_exec(self):
         pass
@@ -132,6 +129,36 @@ class OSProcessThread(Thread):
     def __str__(self):
         return "{}:{}".format(self.__class__.__name__, self._service)
 
+
+# # # OS PROCESS COMMAD THREAD # # #
+
+from subprocess import Popen
+
+class OSProcessCommandThread(OSProcessThread):
+    def _spawn_process(self):
+        _cmd = "sh -c \"{}\"".format(self._service.command().replace('"', '\\"'))
+        _args = shell_split(_cmd)
+        return Popen(_args, shell=False, preexec_fn=setsid, stdout=None, stderr=None)
+
+# # # PROVIDERS # # #
+
+class Provider:
+    DEFAULT    = "command"
+    DOCKERFILE = "dockerfile"
+    DOCKER     = "docker"
+
+# # # OS PROCESS THREAD FACTORY
+
+class OSProcessThreadFactory:
+    @staticmethod
+    def create(service, service_thread):
+        if service.provider() == Provider.DOCKERFILE:
+            return OSProcessCommandThread(service, service_thread)
+
+        if service.provider() == Provider.DOCKER:
+            return OSProcessCommandThread(service, service_thread)
+
+        return OSProcessCommandThread(service, service_thread)
 
 # # # SERVICE THREAD MESSAGE # # #
 
@@ -179,7 +206,7 @@ class ServiceThread(Thread):
     def __start(self, message):
         logging.info("{} << Received START message".format(self))
 
-        self.__osprocess_thread = OSProcessThread(self.__service, self)
+        self.__osprocess_thread = OSProcessThreadFactory.create(self.__service, self)
         self.__osprocess_thread.start()
 
         logging.info("{} >> Response from [{}]: {}".format(
@@ -287,14 +314,6 @@ class RestartPolicy:
     NONE     = "none"
     ALWAYS   = "always"
     ON_ERROR = "on-error"
-
-
-# # # PROVIDERS # # #
-
-class Provider:
-    DEFAULT    = "command"
-    DOCKERFILE = "dockerfile"
-    DOCKER     = "docker"
 
 
 # # # SERVICE # # #
