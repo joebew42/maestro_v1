@@ -2,6 +2,68 @@
 
 import logging
 
+# # # RESTART POLICIES # # #
+
+class RestartPolicy:
+    NONE     = "none"
+    ALWAYS   = "always"
+    ON_ERROR = "on-error"
+
+
+# # # PROVIDERS # # #
+
+class Provider:
+    DEFAULT    = "command"
+    DOCKERFILE = "dockerfile"
+    DOCKER     = "docker"
+
+
+# # # SERVICE # # #
+
+class Service:
+    def __init__(self, name, command, policy=RestartPolicy.NONE, provider=Provider.DEFAULT, params=None):
+        self.__name = name
+        self.__command = command
+        self.__policy = policy
+        self.__provider = provider
+        self.__params = params
+
+    def name(self):
+        return self.__name
+
+    def command(self):
+        return self.__command
+
+    def policy(self):
+        return self.__policy
+
+    def is_to_be_restart_with(self, returncode):
+        if self.__policy == RestartPolicy.ALWAYS:
+            return True
+
+        if self.__policy == RestartPolicy.ON_ERROR and returncode != 0:
+            return True
+
+        return False
+
+    def provider(self):
+        return self.__provider
+
+    def params(self, index):
+        return self.__params.get(index, [])
+
+    def param(self, index):
+        return self.__params.get(index, None)
+
+    def __str__(self):
+        return "{0}:{1}".format(self.__name, self.__provider)
+
+    def __hash__(self):
+        return hash(self.__name)
+
+    __repr__ = __str__
+
+
 # # # JSON PARSER # # #
 
 import json
@@ -221,14 +283,6 @@ class OSProcessDockerThread(OSProcessThread):
         return not os_path_exists(self.__cid_file_path)
 
 
-# # # PROVIDERS # # #
-
-class Provider:
-    DEFAULT    = "command"
-    DOCKERFILE = "dockerfile"
-    DOCKER     = "docker"
-
-
 # # # OS PROCESS THREAD FACTORY
 
 class OSProcessThreadFactory:
@@ -426,60 +480,6 @@ class Supervisor:
 
     def __str__(self):
         return "{}".format(self.__class__.__name__)
-
-
-# # # RESTART POLICIES # # #
-
-class RestartPolicy:
-    NONE     = "none"
-    ALWAYS   = "always"
-    ON_ERROR = "on-error"
-
-
-# # # SERVICE # # #
-
-class Service:
-    def __init__(self, name, command, policy=RestartPolicy.NONE, provider=Provider.DEFAULT, params=None):
-        self.__name = name
-        self.__command = command
-        self.__policy = policy
-        self.__provider = provider
-        self.__params = params
-
-    def name(self):
-        return self.__name
-
-    def command(self):
-        return self.__command
-
-    def policy(self):
-        return self.__policy
-
-    def is_to_be_restart_with(self, returncode):
-        if self.__policy == RestartPolicy.ALWAYS:
-            return True
-
-        if self.__policy == RestartPolicy.ON_ERROR and returncode != 0:
-            return True
-
-        return False
-
-    def provider(self):
-        return self.__provider
-
-    def params(self, index):
-        return self.__params.get(index, [])
-
-    def param(self, index):
-        return self.__params.get(index, None)
-
-    def __str__(self):
-        return "{0}:{1}".format(self.__name, self.__provider)
-
-    def __hash__(self):
-        return hash(self.__name)
-
-    __repr__ = __str__
 
 
 # # # MAIN # # #
