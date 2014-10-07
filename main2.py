@@ -251,6 +251,7 @@ class ServiceThreadMessage:
     RESTART = "RESTART"
     HALT = "HALT"
     ADD_CHILD = "ADD_CHILD"
+    ADD_DEPENDENCY = "ADD_DEPENDENCY"
 
 
 # # # SERVICE THREAD # # #
@@ -263,6 +264,7 @@ class ServiceThread(Thread):
         self.__service = service
         self.__logfile = logfile
         self.__request_queue = Queue()
+        self.__dependencies = []
         self.__children = []
         self.__handlers = {
             ServiceThreadMessage.START : self.__start,
@@ -270,9 +272,12 @@ class ServiceThread(Thread):
             ServiceThreadMessage.RESTART : self.__restart,
             ServiceThreadMessage.HALT : self.__halt,
             ServiceThreadMessage.ADD_CHILD : self.__add_child,
+            ServiceThreadMessage.ADD_DEPENDENCY : self.__add_dependency,
         }
         self.__osprocess_thread = Thread()
         self.__terminated = Event()
+        # TODO: replace with state?
+        self.__running = False
 
     def service(self):
         return self.__service
@@ -293,8 +298,15 @@ class ServiceThread(Thread):
         if block:
             self.__request_queue.join()
 
+    def is_running(self):
+        return self.__running == True;
+
     def __start(self, message):
         logging.info("{} << Received START message".format(self))
+
+        if not self.__dependencies_running():
+            logging.info("{} << Unable to perform START: missing dependencies".format(self))
+            return
 
         self.__osprocess_thread = OSProcessThreadFactory.create(self, self.__logfile)
         self.__osprocess_thread.start()
@@ -304,8 +316,17 @@ class ServiceThread(Thread):
             self.__osprocess_thread,
             self.__osprocess_thread.get_response()
         ))
+        self.__running = True
 
         self.__notify((ServiceThreadMessage.RESTART,))
+
+    def __dependencies_running(self):
+        for dependency in self.__dependencies:
+            if not dependency.is_running():
+                logging.info("{} << [{}] is not yet started".format(self, dependency))
+                return False
+
+        return True
 
     def __stop(self, message):
         logging.info("{} << Received STOP message".format(self))
@@ -318,6 +339,7 @@ class ServiceThread(Thread):
                 self.__osprocess_thread,
                 self.__osprocess_thread.get_response()
             ))
+            self.__running = False
 
     def __restart(self, message):
         logging.info("{} << Received RESTART message".format(self))
@@ -335,6 +357,11 @@ class ServiceThread(Thread):
         _child = message[0]
         self.__children.append(_child)
         logging.info("{} >> Registered to publish over [{}]".format(self, _child))
+
+    def __add_dependency(self, message):
+        _dependency = message[0]
+        self.__dependencies.append(_dependency)
+        logging.info("{} >> Registered dependency [{}]".format(self, _dependency))
 
     def __notify(self, message):
         for child in self.__children:
@@ -369,6 +396,7 @@ class Supervisor:
             _parent_service, _child_service = edge
 
             self.__services[_parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[_child_service]), True)
+            self.__services[_child_service].put_request((ServiceThreadMessage.ADD_DEPENDENCY, self.__services[_parent_service]), True)
 
     def start(self):
         for service in self.__initial_services():
