@@ -60,10 +60,11 @@ from signal import SIGTERM
 from shlex import split as shell_split
 
 class OSProcessThread(Thread):
-    def __init__(self, service, service_thread):
+    def __init__(self, service_thread, logfile):
         super().__init__()
-        self._service = service
         self._service_thread = service_thread
+        self._logfile = logfile
+        self._service = service_thread.service()
         self._response_queue = Queue()
         self._process = None
         self._notify = True
@@ -138,7 +139,86 @@ class OSProcessCommandThread(OSProcessThread):
     def _spawn_process(self):
         _cmd = "sh -c \"{}\"".format(self._service.command().replace('"', '\\"'))
         _args = shell_split(_cmd)
-        return Popen(_args, shell=False, preexec_fn=setsid, stdout=None, stderr=None)
+        return Popen(_args, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
+
+
+# # # OS PROCESS DOCKERFILE THREAD # # #
+
+from subprocess import check_output
+
+class OSProcessDockerfileThread(OSProcessThread):
+    def _spawn_process(self):
+        dockerfile_cmd = ["docker", "build", "-t", self._service.param('image'), self._service.param('path')]
+        return Popen(dockerfile_cmd, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
+
+    def _has_started(self):
+        _image = self._service.param('image').split(':')
+        if len(_image) == 1:
+            _image.append('latest')
+
+        cmd = "docker images | awk '{{print $1$2}}' | grep \"{0}{1}\"".format(_image[0], _image[1])
+        try:
+            return len(check_output(cmd, shell=True)) > 0
+        except:
+            return False
+
+# # # OS PROCESS DOCKER THREAD # # #
+
+from os import remove as os_remove
+from os.path import exists as os_path_exists
+
+class OSProcessDockerThread(OSProcessThread):
+    def _spawn_process(self):
+        self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
+        docker_cmd = ["docker", "run", "-t", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
+
+        # handle ports
+        for port in self._service.params('port'):
+            docker_cmd += ["--publish=\"{0}\"".format(port)]
+
+        # handle expose
+        for expose in self._service.params('expose'):
+            docker_cmd += ["--expose=\"{0}\"".format(expose)]
+
+        # handle link
+        for link in self._service.params('link'):
+            docker_cmd += ["--link=\"{0}\"".format(link)]
+
+        # handle env
+        for env in self._service.params('env'):
+            docker_cmd += ["--env=\"{0}\"".format(env)]
+
+        docker_cmd += [self._service.param('image')]
+
+        # handle command
+        command = self._service.param('command')
+        if command is not None:
+            docker_cmd += ["sh", "-c", command]
+
+        return Popen(docker_cmd, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
+
+    def _post_exec(self):
+        with open(self.__cid_file_path, 'r') as cid_file:
+            cid = cid_file.read()
+
+        Popen(["docker", "kill", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
+        Popen(["docker", "rm", "-f", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
+        os_remove(self.__cid_file_path)
+
+    def _has_started(self):
+        _image = self._service.param('image').split(':')
+        if len(_image) == 1:
+            _image.append('latest')
+
+        cmd = "docker images | awk '{{print $1$2}}' | grep \"{0}{1}\"".format(_image[0], _image[1])
+        try:
+            return len(check_output(cmd, shell=True)) > 0 and os_path_exists(self.__cid_file_path)
+        except:
+            return False
+
+    def _has_stopped(self):
+        return not os_path_exists(self.__cid_file_path)
+
 
 # # # PROVIDERS # # #
 
@@ -151,14 +231,14 @@ class Provider:
 
 class OSProcessThreadFactory:
     @staticmethod
-    def create(service, service_thread):
-        if service.provider() == Provider.DOCKERFILE:
-            return OSProcessCommandThread(service, service_thread)
+    def create(service_thread, logfile):
+        if service_thread.service().provider() == Provider.DOCKER:
+            return OSProcessDockerThread(service_thread, logfile)
 
-        if service.provider() == Provider.DOCKER:
-            return OSProcessCommandThread(service, service_thread)
+        if service_thread.service().provider() == Provider.DOCKERFILE:
+            return OSProcessDockerfileThread(service_thread, logfile)
 
-        return OSProcessCommandThread(service, service_thread)
+        return OSProcessCommandThread(service_thread, logfile)
 
 # # # SERVICE THREAD MESSAGE # # #
 
@@ -175,9 +255,10 @@ class ServiceThreadMessage:
 from threading import Event
 
 class ServiceThread(Thread):
-    def __init__(self, service):
+    def __init__(self, service, logfile):
         super().__init__()
         self.__service = service
+        self.__logfile = logfile
         self.__request_queue = Queue()
         self.__children = []
         self.__handlers = {
@@ -189,6 +270,12 @@ class ServiceThread(Thread):
         }
         self.__osprocess_thread = Thread()
         self.__terminated = Event()
+
+    def service(self):
+        return self.__service
+
+    def logfile(self):
+        return self.__logfile
 
     def run(self):
         logging.info("{} >> Ready".format(self))
@@ -206,7 +293,7 @@ class ServiceThread(Thread):
     def __start(self, message):
         logging.info("{} << Received START message".format(self))
 
-        self.__osprocess_thread = OSProcessThreadFactory.create(self.__service, self)
+        self.__osprocess_thread = OSProcessThreadFactory.create(self, self.__logfile)
         self.__osprocess_thread.start()
 
         logging.info("{} >> Response from [{}]: {}".format(
@@ -259,9 +346,10 @@ class ServiceThread(Thread):
 import networkx as nx
 
 class Supervisor:
-    def __init__(self):
+    def __init__(self, logfile_name="supervisor.log"):
         self.__services = {}
         self.__graph = nx.DiGraph()
+        self.__logfile = open(logfile_name, "a")
 
     def add(self, service):
         self.__graph.add_node(service)
@@ -271,7 +359,7 @@ class Supervisor:
 
     def init(self):
         for service in self.__graph.nodes():
-            self.__services[service] = ServiceThread(service)
+            self.__services[service] = ServiceThread(service, self.__logfile)
             self.__services[service].start()
 
         for edge in self.__graph.edges():
@@ -288,6 +376,7 @@ class Supervisor:
                 sleep(10)
             except KeyboardInterrupt:
                 self.__shutdown()
+                self.__logfile.close()
 
     def __initial_services(self):
         return [service for service in self.__graph.nodes() if len(self.__graph.in_edges(service)) == 0]
