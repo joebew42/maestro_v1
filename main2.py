@@ -162,6 +162,7 @@ class OSProcessDockerfileThread(OSProcessThread):
         except:
             return False
 
+
 # # # OS PROCESS DOCKER THREAD # # #
 
 from os import remove as os_remove
@@ -227,6 +228,7 @@ class Provider:
     DOCKERFILE = "dockerfile"
     DOCKER     = "docker"
 
+
 # # # OS PROCESS THREAD FACTORY
 
 class OSProcessThreadFactory:
@@ -239,6 +241,7 @@ class OSProcessThreadFactory:
             return OSProcessDockerfileThread(service_thread, logfile)
 
         return OSProcessCommandThread(service_thread, logfile)
+
 
 # # # SERVICE THREAD MESSAGE # # #
 
