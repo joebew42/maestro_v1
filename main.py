@@ -458,15 +458,19 @@ class Supervisor:
 
     def __initialize_services(self):
         for service in self.__graph.nodes():
-            self.__services[service] = ServiceThread(service, self.__logfile)
-            self.__services[service].start()
+            self.__initialize_service(service)
+
+    def __initialize_service(self, service):
+        self.__services[service] = ServiceThread(service, self.__logfile)
+        self.__services[service].start()
 
     def __initialize_dependencies(self):
-        for edge in self.__graph.edges():
-            _parent_service, _child_service = edge
+        for parent_service, child_service in self.__graph.edges():
+            self.__initialize_dependency(parent_service, child_service)
 
-            self.__services[_parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[_child_service]), True)
-            self.__services[_child_service].put_request((ServiceThreadMessage.ADD_DEPENDENCY, self.__services[_parent_service]), True)
+    def __initialize_dependency(self, parent_service, child_service):
+            self.__services[parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[child_service]), True)
+            self.__services[child_service].put_request((ServiceThreadMessage.ADD_DEPENDENCY, self.__services[parent_service]), True)
 
     def __boot(self):
         for service in self.__initial_services():
