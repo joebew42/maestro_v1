@@ -448,9 +448,7 @@ class Supervisor:
     def start(self):
         self.__initialize_services()
         self.__initialize_dependencies()
-
-        for service in self.__initial_services():
-            self.__services[service].put_request((ServiceThreadMessage.START,))
+        self.__boot()
 
         while True:
             try:
@@ -469,6 +467,10 @@ class Supervisor:
 
             self.__services[_parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[_child_service]), True)
             self.__services[_child_service].put_request((ServiceThreadMessage.ADD_DEPENDENCY, self.__services[_parent_service]), True)
+
+    def __boot(self):
+        for service in self.__initial_services():
+            self.__services[service].put_request((ServiceThreadMessage.START,))
 
     def __initial_services(self):
         return [service for service in self.__graph.nodes() if len(self.__graph.in_edges(service)) == 0]
