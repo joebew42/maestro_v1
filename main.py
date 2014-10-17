@@ -75,8 +75,18 @@ class JSONParser:
 
     def __init__(self, json_text):
         self.__json = json.loads(json_text)
+        self.__services = []
+        self.__dependencies = []
+
+    def parse(self):
         self.__services = self.__load_services(self.__json)
         self.__dependencies = self.__load_dependencies(self.__services, self.__json)
+
+    def services(self):
+        return self.__services.values()
+
+    def dependencies(self):
+        return self.__dependencies
 
     def __load_services(self, json):
         services = {}
@@ -97,12 +107,6 @@ class JSONParser:
                 dependencies.append((services[dependency_name], services[item['name']]))
         logging.info("JSONPARSER >> Resolved dependencies: {}".format(dependencies))
         return dependencies
-
-    def services(self):
-        return self.__services.values()
-
-    def dependencies(self):
-        return self.__dependencies
 
 
 # # # OS PROCESS THREAD MESSAGE # # #
@@ -489,13 +493,11 @@ import sys
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    if len(sys.argv) < 2:
-        filename = 'conf.d/deploy.json'
-    else:
-        filename = sys.argv[1]
+    deploy_file = sys.argv[1]
 
-    with open(filename, 'r') as json_file:
+    with open(deploy_file, 'r') as json_file:
         parser = JSONParser(json_file.read())
+        parser.parse()
 
     supervisor = Supervisor()
 
