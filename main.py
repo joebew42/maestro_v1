@@ -445,18 +445,10 @@ class Supervisor:
     def add_dependency(self, required_service, service):
         self.__graph.add_edge(required_service, service)
 
-    def init(self):
-        for service in self.__graph.nodes():
-            self.__services[service] = ServiceThread(service, self.__logfile)
-            self.__services[service].start()
-
-        for edge in self.__graph.edges():
-            _parent_service, _child_service = edge
-
-            self.__services[_parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[_child_service]), True)
-            self.__services[_child_service].put_request((ServiceThreadMessage.ADD_DEPENDENCY, self.__services[_parent_service]), True)
-
     def start(self):
+        self.__initialize_services()
+        self.__initialize_dependencies()
+
         for service in self.__initial_services():
             self.__services[service].put_request((ServiceThreadMessage.START,))
 
@@ -465,6 +457,18 @@ class Supervisor:
                 sleep(10)
             except KeyboardInterrupt:
                 self.__shutdown()
+
+    def __initialize_services(self):
+        for service in self.__graph.nodes():
+            self.__services[service] = ServiceThread(service, self.__logfile)
+            self.__services[service].start()
+
+    def __initialize_dependencies(self):
+        for edge in self.__graph.edges():
+            _parent_service, _child_service = edge
+
+            self.__services[_parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[_child_service]), True)
+            self.__services[_child_service].put_request((ServiceThreadMessage.ADD_DEPENDENCY, self.__services[_parent_service]), True)
 
     def __initial_services(self):
         return [service for service in self.__graph.nodes() if len(self.__graph.in_edges(service)) == 0]
@@ -507,5 +511,4 @@ if __name__ == "__main__":
     for dependency in parser.dependencies():
         supervisor.add_dependency(dependency[0], dependency[1])
 
-    supervisor.init()
     supervisor.start()
