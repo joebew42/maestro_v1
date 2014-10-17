@@ -146,7 +146,7 @@ class OSProcessThread(Thread):
 
         try:
             self._wait_until_started()
-            self._process.wait()
+            self._wait_until_exit()
         except KeyboardInterrupt:
             self._process.poll()
         finally:
@@ -165,6 +165,9 @@ class OSProcessThread(Thread):
 
     def get_response(self):
         return self._response_queue.get()
+
+    def _wait_until_exit(self):
+        self._process.wait()
 
     def _wait_until_started(self):
         while not self._has_started():
