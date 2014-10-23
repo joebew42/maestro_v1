@@ -444,13 +444,13 @@ class Supervisor:
 
     def add(self, service):
         self.__graph.add_node(service)
+        self.__initialize_service(service)
 
     def add_dependency(self, required_service, service):
         self.__graph.add_edge(required_service, service)
+        self.__initialize_dependency(required_service, service)
 
     def start(self):
-        self.__initialize_services()
-        self.__initialize_dependencies()
         self.__boot()
 
         while True:
@@ -459,21 +459,13 @@ class Supervisor:
             except KeyboardInterrupt:
                 self.__shutdown()
 
-    def __initialize_services(self):
-        for service in self.__graph.nodes():
-            self.__initialize_service(service)
-
     def __initialize_service(self, service):
         self.__services[service] = ServiceThread(service, self.__logfile)
         self.__services[service].start()
 
-    def __initialize_dependencies(self):
-        for parent_service, child_service in self.__graph.edges():
-            self.__initialize_dependency(parent_service, child_service)
-
     def __initialize_dependency(self, parent_service, child_service):
-            self.__services[parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[child_service]), True)
-            self.__services[child_service].put_request((ServiceThreadMessage.ADD_DEPENDENCY, self.__services[parent_service]), True)
+        self.__services[parent_service].put_request((ServiceThreadMessage.ADD_CHILD, self.__services[child_service]), True)
+        self.__services[child_service].put_request((ServiceThreadMessage.ADD_DEPENDENCY, self.__services[parent_service]), True)
 
     def __boot(self):
         for service in self.__initial_services():
