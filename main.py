@@ -242,25 +242,23 @@ class OSProcessDockerThread(OSProcessThread):
         self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
         docker_cmd = ["docker", "run", "-t", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
 
-        # handle ports
+        for volume in self._service.params('volume'):
+            docker_cmd += ["--volume=\"{0}\"".format(volume)]
+
         for port in self._service.params('port'):
             docker_cmd += ["--publish=\"{0}\"".format(port)]
 
-        # handle expose
         for expose in self._service.params('expose'):
             docker_cmd += ["--expose=\"{0}\"".format(expose)]
 
-        # handle link
         for link in self._service.params('link'):
             docker_cmd += ["--link=\"{0}\"".format(link)]
 
-        # handle env
         for env in self._service.params('env'):
             docker_cmd += ["--env=\"{0}\"".format(env)]
 
         docker_cmd += [self._service.param('image')]
 
-        # handle command
         command = self._service.param('command')
         if command is not None:
             docker_cmd += ["sh", "-c", command]

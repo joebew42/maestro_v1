@@ -1,0 +1,12 @@
+[
+  {
+    "name"    : "joe-postgresql",
+    "restart" : "always",
+    "provider": "docker",
+    "params"  : {
+      "image"   : "postgres:9.3",
+      "port"    : ["5432:5432"],
+      "volume"  : ["/tmp/joe-postgresql/data:/var/lib/postgresql/data"]
+    }
+  }
+]
