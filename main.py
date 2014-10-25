@@ -288,9 +288,9 @@ class OSProcessDockerThread(OSProcessThread):
         return not os_path_exists(self.__cid_file_path)
 
 
-# # # OS PROCESS THREAD FACTORY
+# # # PROCESS THREAD FACTORY
 
-class OSProcessThreadFactory:
+class ProcessThreadFactory:
     @staticmethod
     def create(service_thread, logfile):
         if service_thread.service().provider() == Provider.DOCKER:
@@ -333,7 +333,7 @@ class ServiceThread(Thread):
             ServiceThreadMessage.ADD_CHILD : self.__add_child,
             ServiceThreadMessage.ADD_DEPENDENCY : self.__add_dependency,
         }
-        self.__osprocess_thread = Thread()
+        self.__process_thread = Thread()
         self.__terminated = Event()
         # TODO: replace with state?
         self.__running = False
@@ -367,13 +367,13 @@ class ServiceThread(Thread):
             logging.info("{} << Unable to perform START: missing dependencies".format(self))
             return
 
-        self.__osprocess_thread = OSProcessThreadFactory.create(self, self.__logfile)
-        self.__osprocess_thread.start()
+        self.__process_thread = ProcessThreadFactory.create(self, self.__logfile)
+        self.__process_thread.start()
 
         logging.info("{} >> Response from [{}]: {}".format(
             self,
-            self.__osprocess_thread,
-            self.__osprocess_thread.get_response()
+            self.__process_thread,
+            self.__process_thread.get_response()
         ))
         self.__running = True
 
@@ -390,13 +390,13 @@ class ServiceThread(Thread):
     def __stop(self, message):
         logging.info("{} << Received STOP message".format(self))
 
-        if self.__osprocess_thread.is_alive():
-            self.__osprocess_thread.terminate()
+        if self.__process_thread.is_alive():
+            self.__process_thread.terminate()
 
             logging.info("{} >> Response from [{}]: {}".format(
                 self,
-                self.__osprocess_thread,
-                self.__osprocess_thread.get_response()
+                self.__process_thread,
+                self.__process_thread.get_response()
             ))
             self.__running = False
 
