@@ -294,15 +294,18 @@ class OSProcessDockerThread(OSProcessThread):
 # # # PROCESS THREAD FACTORY
 
 class ProcessThreadFactory:
+    PROCESS = {
+        Provider.DOCKER : OSProcessDockerThread,
+        Provider.DOCKERFILE : OSProcessDockerfileThread,
+        Provider.DEFAULT : OSProcessCommandThread,
+    }
+
     @staticmethod
     def create(service_thread, logfile):
-        if service_thread.service().provider() == Provider.DOCKER:
-            return OSProcessDockerThread(service_thread, logfile)
+        _default = ProcessThreadFactory.PROCESS[Provider.DEFAULT]
+        _service_provider = service_thread.service().provider()
 
-        if service_thread.service().provider() == Provider.DOCKERFILE:
-            return OSProcessDockerfileThread(service_thread, logfile)
-
-        return OSProcessCommandThread(service_thread, logfile)
+        return ProcessThreadFactory.PROCESS.get(_service_provider, _default)(service_thread, logfile)
 
 
 # # # SERVICE THREAD MESSAGE # # #
