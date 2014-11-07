@@ -37,15 +37,6 @@ class Service:
     def policy(self):
         return self.__policy
 
-    def is_to_be_restart_with(self, returncode):
-        if self.__policy == RestartPolicy.ALWAYS:
-            return True
-
-        if self.__policy == RestartPolicy.ON_ERROR and returncode != 0:
-            return True
-
-        return False
-
     def provider(self):
         return self.__provider
 
@@ -181,8 +172,17 @@ class OSProcessThread(Thread):
 
         self._response_queue.put((OSProcessThreadMessage.STOPPED, self._process.pid, self._process.returncode))
 
-        if self._notify == True and self._service.is_to_be_restart_with(self._process.returncode):
+        if self._notify == True and self._is_to_be_restart_with(self._process.returncode):
             self._service_thread.put_request((ServiceThreadMessage.RESTART,))
+
+    def _is_to_be_restart_with(self, returncode):
+        if self._service.policy() == RestartPolicy.ALWAYS:
+            return True
+
+        if self._service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
+            return True
+
+        return False
 
     def _has_started(self):
         return True
