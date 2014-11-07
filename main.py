@@ -396,7 +396,6 @@ class ServiceThread(Thread):
             if not dependency.is_running():
                 logging.info("{} << [{}] is not yet started".format(self, dependency))
                 return False
-
         return True
 
     def __stop(self, message):
