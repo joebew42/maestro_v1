@@ -46,6 +46,12 @@ class Service:
     def param(self, index):
         return self.__params.get(index, None)
 
+    def has_always_restart(self):
+        return self.__policy == RestartPolicy.ALWAYS
+
+    def has_on_error_restart(self):
+        return self.__policy == RestartPolicy.ON_ERROR
+
     def __str__(self):
         return "{0}:{1}".format(self.__name, self.__provider)
 
@@ -176,10 +182,10 @@ class OSProcessThread(Thread):
             self._service_thread.put_request((ServiceThreadMessage.RESTART,))
 
     def _is_to_be_restart_with(self, returncode):
-        if self._service.policy() == RestartPolicy.ALWAYS:
+        if self._service.has_always_restart():
             return True
 
-        if self._service.policy() == RestartPolicy.ON_ERROR and returncode != 0:
+        if self._service.has_on_error_restart() and returncode != 0:
             return True
 
         return False
