@@ -452,6 +452,8 @@ class ServiceThread(Thread):
 
 import networkx as nx
 
+from signal import signal
+
 class Supervisor:
     def __init__(self, logfile_name="supervisor.log"):
         self.__services = {}
@@ -467,13 +469,15 @@ class Supervisor:
         self.__initialize_dependency(required_service, service)
 
     def start(self):
+        signal(SIGTERM, self.__shutdown)
+
         self.__boot()
 
         while True:
             try:
                 sleep(10)
             except KeyboardInterrupt:
-                self.__shutdown()
+                self.__shutdown(None, None)
 
     def __initialize_service(self, service):
         self.__services[service] = ServiceThread(service, self.__logfile)
@@ -490,7 +494,7 @@ class Supervisor:
     def __initial_services(self):
         return [service for service in self.__graph.nodes() if len(self.__graph.in_edges(service)) == 0]
 
-    def __shutdown(self):
+    def __shutdown(self, signal_number, stack_frame):
         logging.info("{} >> Shutting down...".format(self))
 
         for service in self.__sorted_services()[::-1]:
