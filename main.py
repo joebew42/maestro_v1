@@ -247,7 +247,7 @@ from os.path import exists as os_path_exists
 class OSProcessDockerThread(OSProcessThread):
     def _spawn_process(self):
         self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
-        docker_cmd = ["docker", "run", "-t", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
+        docker_cmd = ["docker", "run", "-i", "-t", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
 
         for volumes_from in self._service.params('volumes_from'):
             docker_cmd += ["--volumes-from=\"{0}\"".format(volumes_from)]
