@@ -241,6 +241,7 @@ class OSProcessDockerfileThread(OSProcessThread):
 # # # OS PROCESS DOCKER THREAD # # #
 
 from os import remove as os_remove
+from os import getenv as os_getenv
 from os.path import exists as os_path_exists
 
 class OSProcessDockerThread(OSProcessThread):
@@ -264,7 +265,8 @@ class OSProcessDockerThread(OSProcessThread):
             docker_cmd += ["--link=\"{0}\"".format(link)]
 
         for env in self._service.params('env'):
-            docker_cmd += ["--env=\"{0}\"".format(env)]
+            _variable, _value = env.split('=')
+            docker_cmd += ["--env=\"{0}={1}\"".format(_variable, self.__read(_value))]
 
         docker_cmd += [self._service.param('image')]
 
@@ -273,6 +275,11 @@ class OSProcessDockerThread(OSProcessThread):
             docker_cmd += ["sh", "-c", command]
 
         return Popen(docker_cmd, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
+
+    def __read(self, value):
+        if value.startswith('$'):
+            return os_getenv(value[1:])
+        return value
 
     def _post_exec(self):
         with open(self.__cid_file_path, 'r') as cid_file:

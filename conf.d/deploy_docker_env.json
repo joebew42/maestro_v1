@@ -4,9 +4,9 @@
     "restart" : "none",
     "provider": "docker",
     "params"  : {
-      "image"   : "busybox:ubuntu-14.04",
-      "command" : "echo $MYVAR",
-      "env"     : [ "MYVAR=HELLO" ]
+      "image"   : "busybox",
+      "command" : "echo $MYVAR $HOSTHOME",
+      "env"     : [ "MYVAR=HELLO", "HOSTHOME=$HOME" ]
     }
   }
 ]
