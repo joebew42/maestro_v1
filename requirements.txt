@@ -1,1 +1,5 @@
-networkx>1.9
+decorator==3.4.0
+docker-py==0.6.0
+networkx==1.9.1
+requests==2.4.3
+six==1.8.0
