@@ -106,23 +106,20 @@ class JSONParser:
         return dependencies
 
 
-# # # OS PROCESS THREAD MESSAGE # # #
+# # # PROCESS THREAD MESSAGE # # #
 
-class OSProcessThreadMessage:
+class ProcessThreadMessage:
     STARTED = "STARTED"
     STOPPED = "STOPPED"
 
 
-# # # OS PROCESS THREAD # # #
+# # # PROCESS THREAD # # #
 
 from queue import Queue
 from threading import Thread
 from time import sleep
-from os import killpg, setsid
-from signal import SIGTERM
-from shlex import split as shell_split
 
-class OSProcessThread(Thread):
+class ProcessThread(Thread):
     def __init__(self, service_thread, logfile):
         super().__init__()
         self._service_thread = service_thread
@@ -137,51 +134,52 @@ class OSProcessThread(Thread):
 
         logging.info("{} >> Spawned [{}] with restart policy [{}]".format(
             self,
-            self._process.pid,
+            self._process_pid(),
             self._service.policy()
         ))
 
         try:
-            self._wait_until_started()
-            self._wait_until_exit()
+            self.__wait_until_started()
+            self.__wait_until_exit()
         except KeyboardInterrupt:
-            self._process.poll()
+            self._poll_process()
         finally:
             self._post_exec()
-            self._wait_until_stopped()
+            self.__wait_until_stopped()
 
             logging.info("{} >> PID [{}] has exited with [{}]".format(
                 self,
-                self._process.pid,
-                self._process.returncode
+                self._process_pid(),
+                self._process_returncode()
             ))
 
     def terminate(self):
         self._notify = False
-        killpg(self._process.pid, SIGTERM)
+        self._process_terminate()
 
     def get_response(self):
         return self._response_queue.get()
 
-    def _wait_until_exit(self):
-        self._process.wait()
+    def __wait_until_exit(self):
+        while self._is_running():
+            sleep(1)
 
-    def _wait_until_started(self):
+    def __wait_until_started(self):
         while not self._has_started():
             sleep(1)
 
-        self._response_queue.put((OSProcessThreadMessage.STARTED, self._process.pid))
+        self._response_queue.put((ProcessThreadMessage.STARTED, self._process_pid()))
 
-    def _wait_until_stopped(self):
+    def __wait_until_stopped(self):
         while not self._has_stopped():
             sleep(1)
 
-        self._response_queue.put((OSProcessThreadMessage.STOPPED, self._process.pid, self._process.returncode))
+        self._response_queue.put((ProcessThreadMessage.STOPPED, self._process_pid(), self._process_returncode()))
 
-        if self._notify == True and self._is_to_be_restart_with(self._process.returncode):
+        if self._notify == True and self.__is_to_be_restart_with(self._process_returncode()):
             self._service_thread.put_request((ServiceThreadMessage.RESTART,))
 
-    def _is_to_be_restart_with(self, returncode):
+    def __is_to_be_restart_with(self, returncode):
         if self._service.has_always_restart():
             return True
 
@@ -189,6 +187,21 @@ class OSProcessThread(Thread):
             return True
 
         return False
+
+    def _process_pid(self):
+        return None
+
+    def _process_poll(self):
+        pass
+
+    def _process_returncode(self):
+        return None
+
+    def _process_terminate(self):
+        pass
+
+    def _is_running(self):
+        return True
 
     def _has_started(self):
         return True
@@ -206,25 +219,42 @@ class OSProcessThread(Thread):
         return "{}:{}".format(self.__class__.__name__, self._service)
 
 
-# # # OS PROCESS COMMAD THREAD # # #
+# # # PROCESS COMMAD THREAD # # #
 
+from os import killpg, setsid
+from signal import SIGTERM
 from subprocess import Popen
+from shlex import split as shell_split
 
-class OSProcessCommandThread(OSProcessThread):
+class ProcessCommandThread(ProcessThread):
     def _spawn_process(self):
         _cmd = "sh -c \"{}\"".format(self._service.command().replace('"', '\\"'))
         _args = shell_split(_cmd)
-        return Popen(_args, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
+        self.__process = Popen(_args, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
 
+    def _is_running(self):
+        self.__process.wait()
 
-# # # OS PROCESS DOCKERFILE THREAD # # #
+    def _process_terminate(self):
+        killpg(self.__process.pid, SIGTERM)
+
+    def _process_pid(self):
+        return self.__process.pid
+
+    def _process_poll(self):
+        self.__process.poll()
+
+    def _process_returncode(self):
+        return self.__process.returncode
+
+# # # PROCESS DOCKERFILE THREAD # # #
 
 from subprocess import check_output
 
-class OSProcessDockerfileThread(OSProcessThread):
+class ProcessDockerfileThread(ProcessThread):
     def _spawn_process(self):
         dockerfile_cmd = ["docker", "build", "-t", self._service.param('image'), self._service.param('path')]
-        return Popen(dockerfile_cmd, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
+        self.__process = Popen(dockerfile_cmd, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
 
     def _has_started(self):
         _image = self._service.param('image').split(':')
@@ -237,80 +267,134 @@ class OSProcessDockerfileThread(OSProcessThread):
         except:
             return False
 
+    def _is_running(self):
+        self.__process.wait()
 
-# # # OS PROCESS DOCKER THREAD # # #
+    def _process_terminate(self):
+        killpg(self.__process.pid, SIGTERM)
+
+    def _process_pid(self):
+        return self.__process.pid
+
+    def _process_poll(self):
+        self.__process.poll()
+
+    def _process_returncode(self):
+        return self.__process.returncode
+
+
+# # # PROCESS DOCKER THREAD # # #
 
 from os import remove as os_remove
 from os import getenv as os_getenv
 from os.path import exists as os_path_exists
 
-class OSProcessDockerThread(OSProcessThread):
+from docker import Client as docker_client
+from docker.errors import APIError as DockerAPIError
+
+class ProcessDockerThread(ProcessThread):
     def _spawn_process(self):
-        self.__cid_file_path = "docker_cids/{0}".format(self._service.name())
-        docker_cmd = ["docker", "run", "-i", "-t", "--rm=true", "--cidfile=\"{0}\"".format(self.__cid_file_path), "--name=\"{0}\"".format(self._service.name())]
+        self.__docker = docker_client(base_url='unix://var/run/docker.sock')
 
-        for volumes_from in self._service.params('volumes_from'):
-            docker_cmd += ["--volumes-from=\"{0}\"".format(volumes_from)]
+        self.__cid = self.__docker.create_container(**self.__container_args())['Id']
 
-        for volume in self._service.params('volume'):
-            docker_cmd += ["--volume=\"{0}\"".format(volume)]
+        self.__docker.start(**self.__container_start_args())
 
-        for port in self._service.params('port'):
-            docker_cmd += ["--publish=\"{0}\"".format(port)]
-
-        for expose in self._service.params('expose'):
-            docker_cmd += ["--expose=\"{0}\"".format(expose)]
-
-        for link in self._service.params('link'):
-            docker_cmd += ["--link=\"{0}\"".format(link)]
-
-        for env in self._service.params('env'):
-            _variable, _value = env.split('=')
-            docker_cmd += ["--env=\"{0}={1}\"".format(_variable, self.__read(_value))]
-
-        docker_cmd += [self._service.param('image')]
-
-        command = self._service.param('command')
-        if command is not None:
-            docker_cmd += ["sh", "-c", command]
-
-        return Popen(docker_cmd, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
-
-    def __read(self, value):
-        if value.startswith('$'):
-            return os_getenv(value[1:])
-        return value
-
-    def _post_exec(self):
-        with open(self.__cid_file_path, 'r') as cid_file:
-            cid = cid_file.read()
-
-        Popen(["docker", "kill", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
-        Popen(["docker", "rm", "-f", cid], shell=False, stdout=self._logfile, stderr=self._logfile).wait()
-        os_remove(self.__cid_file_path)
+        # TODO exception handling
+        # try:
+        #     self.__docker.start(**docker_start_args)
+        # except DockerAPIError as error:
+        #     logging.error("{} >> {}".format(
+        #         self,
+        #         error
+        #     ))
+        #     self.terminate()
 
     def _has_started(self):
         _image = self._service.param('image').split(':')
         if len(_image) == 1:
             _image.append('latest')
 
-        cmd = "docker images | awk '{{print $1$2}}' | grep \"{0}{1}\"".format(_image[0], _image[1])
-        try:
-            return len(check_output(cmd, shell=True)) > 0 and os_path_exists(self.__cid_file_path)
-        except:
-            return False
+        return len(self.__docker.images(name=_image)) == 1
+
+    def _is_running(self):
+        for cid in self.__docker.containers(quiet=True):
+            if cid['Id'] == self.__cid:
+                return True
+        return False
+
+    def _process_terminate(self):
+        self.__docker.stop(container=self.__cid)
+
+    def _post_exec(self):
+        self.__docker.remove_container(container=self.__cid)
+        self.__cid = None
 
     def _has_stopped(self):
-        return not os_path_exists(self.__cid_file_path)
+        return self.__cid is None
+
+    def _process_pid(self):
+        return self.__cid
+
+    def _process_returncode(self):
+        return 0
+
+    def __container_args(self):
+        command = self._service.param('command')
+        command_args = []
+        if command is not None:
+            _cmd = "sh -c \"{}\"".format(command.replace('"', '\\"'))
+            command_args = shell_split(_cmd)
+            logging.info("{} >> Wants to run: {}".format(
+                self,
+                command_args
+            ))
+
+        _container_args = {
+            'image' : self._service.param('image'),
+            'command' : command_args,
+            'detach' : True,
+            'stdin_open' : True,
+            'tty' : True,
+            'ports' : [ int(port) for port in self._service.params('expose') ],
+            'volumes' : [ volume.split(':')[1] for volume in self._service.params('volume') ],
+            'environment' : [ self.__resolve_environment(variable) for variable in self._service.params('env') ],
+            'name' : self._service.name()
+        }
+
+        return _container_args
+
+    def __container_start_args(self):
+        _container_start_args = {
+            'container' : self.__cid,
+            'binds' : { volume[0] : { 'bind' : volume[1], 'ro' : False } for volume in self.__volumes_bindings() },
+            'volumes_from' : self._service.params('volumes_from'),
+            'port_bindings' : { int(port[1]) : int(port[0]) for port in [ value.split(':') for value in self._service.params('port') ] }
+            # TODO handle links
+        }
+
+        return _container_start_args
+
+    def __volumes_bindings(self):
+        return [ volume_binding.split(':') for volume_binding in self._service.params('volume') ]
+
+    def __resolve_environment(self, variable):
+        _variable, _value = env.split('=')
+        return "{}={}".format(_variable, self.__read_environment_variable(_value))
+
+    def __read_environment_variable(self, value):
+        if value.startswith('$'):
+            return os_getenv(value[1:])
+        return value
 
 
 # # # PROCESS THREAD FACTORY
 
 class ProcessThreadFactory:
     PROCESS = {
-        Provider.DOCKER : OSProcessDockerThread,
-        Provider.DOCKERFILE : OSProcessDockerfileThread,
-        Provider.DEFAULT : OSProcessCommandThread,
+        Provider.DOCKER : ProcessDockerThread,
+        Provider.DOCKERFILE : ProcessDockerfileThread,
+        Provider.DEFAULT : ProcessCommandThread,
     }
 
     @staticmethod

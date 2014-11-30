@@ -18,7 +18,8 @@
     "requires": [ "nginx-setup", "heart" ],
     "provider": "docker",
     "params"  : {
-      "image"   : "ubuntu-14.04-nginx",
+      "image" : "ubuntu-14.04-nginx",
+      "expose": [ "80" ],
       "port"  : [ "65432:80" ]
     }
   },
@@ -28,7 +29,8 @@
     "requires": [ "nginx-setup", "heart" ],
     "provider": "docker",
     "params"  : {
-      "image"   : "ubuntu-14.04-nginx",
+      "image" : "ubuntu-14.04-nginx",
+      "expose": [ "80" ],
       "port"  : [ "65433:80" ]
     }
   }
