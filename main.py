@@ -285,9 +285,7 @@ class ProcessDockerfileThread(ProcessThread):
 
 # # # PROCESS DOCKER THREAD # # #
 
-from os import remove as os_remove
 from os import getenv as os_getenv
-from os.path import exists as os_path_exists
 
 from docker import Client as docker_client
 from docker.errors import APIError as DockerAPIError
