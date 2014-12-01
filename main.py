@@ -130,7 +130,7 @@ class ProcessThread(Thread):
         self._notify = True
 
     def run(self):
-        self._process = self._spawn_process()
+        self._spawn_process()
 
         logging.info("{} >> Spawned [{}] with restart policy [{}]".format(
             self,
@@ -309,33 +309,31 @@ class ProcessDockerThread(ProcessThread):
         #     self.terminate()
 
     def _has_started(self):
-        _image = self._service.param('image').split(':')
-        if len(_image) == 1:
-            _image.append('latest')
-
-        return len(self.__docker.images(name=_image)) == 1
+        return self.__container_is_running()
 
     def _is_running(self):
-        for cid in self.__docker.containers(quiet=True):
-            if cid['Id'] == self.__cid:
-                return True
-        return False
+        self.__returncode = self.__docker.wait(container=self.__cid)
 
     def _process_terminate(self):
         self.__docker.stop(container=self.__cid)
 
     def _post_exec(self):
         self.__docker.remove_container(container=self.__cid)
-        self.__cid = None
 
     def _has_stopped(self):
-        return self.__cid is None
+        return not self.__container_is_running()
 
     def _process_pid(self):
         return self.__cid
 
     def _process_returncode(self):
-        return 0
+        return self.__returncode
+
+    def __container_is_running(self):
+        for container in self.__docker.containers(quiet=True):
+            if self.__cid == container['Id']:
+                return True
+        return False
 
     def __container_args(self):
         command = self._service.param('command')
