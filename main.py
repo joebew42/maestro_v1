@@ -131,6 +131,13 @@ class ProcessThread(Thread):
 
     def run(self):
         self._spawn_process()
+        # TODO handle spawn exception
+        # try:
+        #     self._spawn_process()
+        # except SpawnProcessException as error:
+        #     logging.error("{} >> ...".format(self))
+        #     self._response_queue.put((ProcessThreadMessage.NOT_STARTED, error))
+        #     return
 
         logging.info("{} >> Spawned [{}] with restart policy [{}]".format(
             self,
