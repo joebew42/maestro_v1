@@ -53,7 +53,7 @@ class Service:
         return self.__policy == RestartPolicy.ON_ERROR
 
     def __str__(self):
-        return "{0}:{1}".format(self.__name, self.__provider)
+        return "{}:{}".format(self.__provider, self.__name)
 
     def __hash__(self):
         return hash(self.__name)
@@ -558,7 +558,7 @@ class ServiceThread(Thread):
             child.put_request(message)
 
     def __str__(self):
-        return "{}".format(self.__class__.__name__, self.__service)
+        return "{}:{}".format(self.__class__.__name__, self.__service)
 
 
 # # # SUPERVISOR # # #
