@@ -301,6 +301,13 @@ class ProcessDockerThread(ProcessThread):
     def _spawn_process(self):
         self.__docker = docker_client(base_url='unix://var/run/docker.sock')
 
+        if not self.__docker_image_exists(self._service.param('image')):
+            logging.info("{} >> Image [{}] not locally available. Pulling it from the hub ... ".format(
+                self,
+                self._service.param('image')
+            ))
+            self.__docker_pull_image(self._service.param('image'))
+
         self.__cid = self.__docker.create_container(**self.__container_args())['Id']
 
         self.__docker.start(**self.__container_start_args())
@@ -337,10 +344,29 @@ class ProcessDockerThread(ProcessThread):
         return self.__returncode
 
     def __container_is_running(self):
-        for container in self.__docker.containers(quiet=True):
-            if self.__cid == container['Id']:
+        for _container in self.__docker.containers(quiet=True):
+            if self.__cid == _container['Id']:
                 return True
         return False
+
+    def __docker_image_exists(self, image_name):
+        for _image in self.__docker.images(name=image_name.split(':')[0]):
+            if image_name in _image['RepoTags']:
+                return True
+        return False
+
+    def __docker_pull_image(self, image_name):
+        _image = image_name.split(':')
+        _repository = _image[0]
+        _tag = _image[1] if len(_image) > 1 else None
+
+        for _status_line in self.__docker.pull(_repository, tag=_tag, stream=True):
+            _pull_status = json.loads(_status_line)
+            logging.info("{} >> Pulling image [{}] / status: [{}]".format(
+                self,
+                image_name,
+                _pull_status['status']
+            ))
 
     def __container_args(self):
         command = self._service.param('command')
@@ -532,7 +558,7 @@ class ServiceThread(Thread):
             child.put_request(message)
 
     def __str__(self):
-        return "{}:{}".format(self.__class__.__name__, self.__service)
+        return "{}".format(self.__class__.__name__, self.__service)
 
 
 # # # SUPERVISOR # # #
