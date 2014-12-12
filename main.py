@@ -350,15 +350,18 @@ class ProcessDockerThread(ProcessThread):
         return False
 
     def __docker_image_exists(self, image_name):
-        for _image in self.__docker.images(name=image_name.split(':')[0]):
-            if image_name in _image['RepoTags']:
+        _image_name = image_name + ':latest' if ':' not in image_name else image_name
+        _repository = _image_name.split(':')[0]
+
+        for _image in self.__docker.images(name=_repository):
+            if _image_name in _image['RepoTags']:
                 return True
         return False
 
     def __docker_pull_image(self, image_name):
-        _image = image_name.split(':')
-        _repository = _image[0]
-        _tag = _image[1] if len(_image) > 1 else None
+        _image_name = image_name.split(':')
+        _repository = _image_name[0]
+        _tag = _image_name[1] if len(_image_name) > 1 else None
 
         for _status_line in self.__docker.pull(_repository, tag=_tag, stream=True):
             _pull_status = json.loads(_status_line)
