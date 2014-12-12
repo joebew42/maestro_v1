@@ -1,0 +1,22 @@
+[
+  {
+    "name"    : "docker_to_be_linked",
+    "restart" : "always",
+    "provider": "docker",
+    "params"  : {
+      "image"   : "busybox:ubuntu-14.04",
+      "command" : "while [ true ]; do sleep 10; done"
+    }
+  },
+  {
+    "name"    : "docker_with_link",
+    "restart" : "always",
+    "requires": [ "docker_to_be_linked" ],
+    "provider": "docker",
+    "params"  : {
+      "image"   : "busybox:ubuntu-14.04",
+      "link"    : [ "docker_to_be_linked:linked" ],
+      "command" : "while [ true ]; do echo $LINKED_NAME; sleep 10; done"
+    }
+  }
+]

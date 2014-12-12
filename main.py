@@ -401,8 +401,8 @@ class ProcessDockerThread(ProcessThread):
             'container' : self.__cid,
             'binds' : { volume[0] : { 'bind' : volume[1], 'ro' : False } for volume in self.__volumes_bindings() },
             'volumes_from' : self._service.params('volumes_from'),
-            'port_bindings' : { int(port[1]) : int(port[0]) for port in [ value.split(':') for value in self._service.params('port') ] }
-            # TODO handle links
+            'port_bindings' : { int(port[1]) : int(port[0]) for port in [ value.split(':') for value in self._service.params('port') ] },
+            'links' : [ (link[0], link[1]) for link in [ value.split(':') for value in self._service.params('link') ] ]
         }
 
         return _container_start_args
