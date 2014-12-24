@@ -254,47 +254,44 @@ class ProcessCommandThread(ProcessThread):
     def _process_returncode(self):
         return self.__process.returncode
 
+
 # # # PROCESS DOCKERFILE THREAD # # #
 
 from subprocess import check_output
 
+from docker import Client as docker_client
+
 class ProcessDockerfileThread(ProcessThread):
     def _spawn_process(self):
-        dockerfile_cmd = ["docker", "build", "-t", self._service.param('image'), self._service.param('path')]
-        self.__process = Popen(dockerfile_cmd, shell=False, preexec_fn=setsid, stdout=self._logfile, stderr=self._logfile)
+        self.__docker = docker_client(base_url='unix://var/run/docker.sock')
+
+        for _build_line in self.__docker.build(path=self._service.param('path'), tag=self._service.param('image'), rm=True):
+            _build_status = json.loads(_build_line)
+            logging.info("{} >> Building image [{}]: {}".format(
+                self,
+                self._service.param('image'),
+                _build_status['stream']
+            ))
 
     def _has_started(self):
-        _image = self._service.param('image').split(':')
-        if len(_image) == 1:
-            _image.append('latest')
-
-        cmd = "docker images | awk '{{print $1$2}}' | grep \"{0}{1}\"".format(_image[0], _image[1])
-        try:
-            return len(check_output(cmd, shell=True)) > 0
-        except:
-            return False
+        return self.__docker_image_exists(self._service.param('image'))
 
     def _is_running(self):
-        self.__process.wait()
+        return False
 
-    def _process_terminate(self):
-        killpg(self.__process.pid, SIGTERM)
+    def __docker_image_exists(self, image_name):
+        _image_name = image_name + ':latest' if ':' not in image_name else image_name
+        _repository = _image_name.split(':')[0]
 
-    def _process_pid(self):
-        return self.__process.pid
-
-    def _process_poll(self):
-        self.__process.poll()
-
-    def _process_returncode(self):
-        return self.__process.returncode
-
+        for _image in self.__docker.images(name=_repository):
+            if _image_name in _image['RepoTags']:
+                return True
+        return False
 
 # # # PROCESS DOCKER THREAD # # #
 
 from os import getenv as os_getenv
 
-from docker import Client as docker_client
 from docker.errors import APIError as DockerAPIError
 
 class ProcessDockerThread(ProcessThread):
