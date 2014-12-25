@@ -255,15 +255,46 @@ class ProcessCommandThread(ProcessThread):
         return self.__process.returncode
 
 
+# # # DOCKER CLIENT # # #
+
+from docker import Client
+
+class DockerClient(Client):
+    def __init__(self, *args, **kwargs):
+        super(DockerClient, self).__init__(*args, **kwargs)
+
+    def image_exists(self, image_name):
+        _image_name = image_name + ':latest' if ':' not in image_name else image_name
+        _repository = _image_name.split(':')[0]
+
+        for _image in self.images(name=_repository):
+            if _image_name in _image['RepoTags']:
+                return True
+        return False
+
+    def pull_image(self, image_name):
+        _image_name = image_name.split(':')
+        _repository = _image_name[0]
+        _tag = _image_name[1] if len(_image_name) > 1 else None
+
+        for _status_line in self.pull(_repository, tag=_tag, stream=True):
+            _pull_status = json.loads(_status_line)
+            logging.info("{} >> Pulling image [{}] / status: [{}]".format(
+                self,
+                image_name,
+                _pull_status['status']
+            ))
+
+    def __str__(self):
+        return self.__class__.__name__
+
 # # # PROCESS DOCKERFILE THREAD # # #
 
 from subprocess import check_output
 
-from docker import Client as docker_client
-
 class ProcessDockerfileThread(ProcessThread):
     def _spawn_process(self):
-        self.__docker = docker_client(base_url='unix://var/run/docker.sock')
+        self.__docker = DockerClient(base_url='unix://var/run/docker.sock')
 
         for _build_line in self.__docker.build(path=self._service.param('path'), tag=self._service.param('image'), rm=True):
             _build_status = json.loads(_build_line)
@@ -274,18 +305,9 @@ class ProcessDockerfileThread(ProcessThread):
             ))
 
     def _has_started(self):
-        return self.__docker_image_exists(self._service.param('image'))
+        return self.__docker.image_exists(self._service.param('image'))
 
     def _is_running(self):
-        return False
-
-    def __docker_image_exists(self, image_name):
-        _image_name = image_name + ':latest' if ':' not in image_name else image_name
-        _repository = _image_name.split(':')[0]
-
-        for _image in self.__docker.images(name=_repository):
-            if _image_name in _image['RepoTags']:
-                return True
         return False
 
 # # # PROCESS DOCKER THREAD # # #
@@ -296,14 +318,14 @@ from docker.errors import APIError as DockerAPIError
 
 class ProcessDockerThread(ProcessThread):
     def _spawn_process(self):
-        self.__docker = docker_client(base_url='unix://var/run/docker.sock')
+        self.__docker = DockerClient(base_url='unix://var/run/docker.sock')
 
-        if not self.__docker_image_exists(self._service.param('image')):
+        if not self.__docker.image_exists(self._service.param('image')):
             logging.info("{} >> Image [{}] not locally available. Pulling it from the hub ... ".format(
                 self,
                 self._service.param('image')
             ))
-            self.__docker_pull_image(self._service.param('image'))
+            self.__docker.pull_image(self._service.param('image'))
 
         self.__cid = self.__docker.create_container(**self.__container_args())['Id']
 
@@ -345,28 +367,6 @@ class ProcessDockerThread(ProcessThread):
             if self.__cid == _container['Id']:
                 return True
         return False
-
-    def __docker_image_exists(self, image_name):
-        _image_name = image_name + ':latest' if ':' not in image_name else image_name
-        _repository = _image_name.split(':')[0]
-
-        for _image in self.__docker.images(name=_repository):
-            if _image_name in _image['RepoTags']:
-                return True
-        return False
-
-    def __docker_pull_image(self, image_name):
-        _image_name = image_name.split(':')
-        _repository = _image_name[0]
-        _tag = _image_name[1] if len(_image_name) > 1 else None
-
-        for _status_line in self.__docker.pull(_repository, tag=_tag, stream=True):
-            _pull_status = json.loads(_status_line)
-            logging.info("{} >> Pulling image [{}] / status: [{}]".format(
-                self,
-                image_name,
-                _pull_status['status']
-            ))
 
     def __container_args(self):
         command = self._service.param('command')
