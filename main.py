@@ -290,8 +290,6 @@ class DockerClient(Client):
 
 # # # PROCESS DOCKERFILE THREAD # # #
 
-from subprocess import check_output
-
 class ProcessDockerfileThread(ProcessThread):
     def _spawn_process(self):
         self.__docker = DockerClient(base_url='unix://var/run/docker.sock')
@@ -314,7 +312,7 @@ class ProcessDockerfileThread(ProcessThread):
 
 from os import getenv as os_getenv
 
-from docker.errors import APIError as DockerAPIError
+# from docker.errors import APIError as DockerAPIError
 
 class ProcessDockerThread(ProcessThread):
     def _spawn_process(self):
@@ -408,7 +406,7 @@ class ProcessDockerThread(ProcessThread):
         return [ volume_binding.split(':') for volume_binding in self._service.params('volume') ]
 
     def __resolve_environment(self, variable):
-        _variable, _value = env.split('=')
+        _variable, _value = variable.split('=')
         return "{}={}".format(_variable, self.__read_environment_variable(_value))
 
     def __read_environment_variable(self, value):
