@@ -331,7 +331,7 @@ class ProcessDockerThread(ProcessThread):
 
         # TODO exception handling
         # try:
-        #     self.__docker.start(**docker_start_args)
+        #     self.__docker.start(**self.__container_start_args())
         # except DockerAPIError as error:
         #     logging.error("{} >> {}".format(
         #         self,
@@ -530,6 +530,9 @@ class ServiceThread(Thread):
             self.__running = False
 
     def __restart(self, message):
+        # TODO: Max restart-retry-count
+        #       we have to calculate the number of restart per unit time
+        #       we have to store the last valid restart-time
         logging.info("{} << Received RESTART message".format(self))
 
         self.__stop(message)
