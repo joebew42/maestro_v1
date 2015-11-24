@@ -1,0 +1,23 @@
+[
+  {
+    "name"    : "joe-postgresql-data",
+    "restart" : "always",
+    "provider": "docker",
+    "params"  : {
+      "image"   : "busybox:latest",
+      "volume"  : ["/tmp/joe-postgresql/data:/var/lib/postgresql/data"],
+      "command" : "while [ true ]; do sleep 600; done"
+    }
+  },
+  {
+    "name"    : "joe-postgresql",
+    "restart" : "always",
+    "provider": "docker",
+    "requires": ["joe-postgresql-data"],
+    "params"  : {
+      "image"       : "postgres:9.3",
+      "port"        : ["5432:5432"],
+      "volumes_from": ["joe-postgresql-data"]
+    }
+  }
+]
