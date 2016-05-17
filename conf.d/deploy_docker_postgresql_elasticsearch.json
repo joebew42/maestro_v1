@@ -15,7 +15,7 @@
     "provider": "docker",
     "requires": ["joe-postgresql-data"],
     "params"  : {
-      "image"       : "postgres:9.3",
+      "image"       : "kiasaki/alpine-postgres:9.4",
       "port"        : ["5432:5432"],
       "volumes_from": ["joe-postgresql-data"]
     }
